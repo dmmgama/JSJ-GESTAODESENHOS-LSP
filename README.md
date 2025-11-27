@@ -2,6 +2,8 @@
 
 **Sistema LISP para gestão de legendas de desenhos de estruturas em AutoCAD**
 
+**Versão atual: V35.1** | Fase 2 em desenvolvimento
+
 ---
 
 ## 📋 Visão Geral
@@ -16,11 +18,12 @@ O sistema automatiza a gestão de legendas em ficheiros AutoCAD com dezenas de l
 
 | Desafio | Solução JSJ |
 |---------|-------------|
-| Atualizar cliente/obra em 50+ layouts manualmente | Opção 2: Alteração global de campos |
+| Atualizar cliente/obra em 50+ layouts manualmente | Alteração global de campos |
 | Manter tabela de revisões consistente | Sistema A→E com auto-cálculo de R |
-| Criar novos desenhos com formatação correta | Opção 6: Cópia de TEMPLATE |
-| Exportar lista para Excel mestre (LPP) | Opção 3: Geração de CSV |
-| Sincronizar alterações do Excel para DWG | Opção 4: Importação de CSV |
+| Emitir nova revisão em múltiplos desenhos | Emitir Revisão (TODOS ou seleção) |
+| Criar novos desenhos com formatação correta | Gerar Layouts a partir de TEMPLATE |
+| Exportar lista para Excel mestre (LPP) | Geração de CSV com DWG_SOURCE |
+| Sincronizar alterações do Excel para DWG | Importação de CSV |
 
 ---
 
@@ -46,10 +49,11 @@ O sistema automatiza a gestão de legendas em ficheiros AutoCAD com dezenas de l
 
 ### Workflow Típico
 1. **Setup:** Criar layout TEMPLATE com bloco `LEGENDA_JSJ_V1`
-2. **Gerar:** Opção 6 copia TEMPLATE → novos layouts numerados
-3. **Preencher:** Opção 2 define campos globais (cliente, obra, etc.)
-4. **Exportar:** Opção 3 gera CSV para controlo externo
-5. **Sincronizar:** Opção 4 importa alterações do CSV/Excel
+2. **Gerar:** Opção 4 copia TEMPLATE → novos layouts numerados
+3. **Preencher:** Alterar Campo define campos globais (cliente, obra, etc.)
+4. **Emitir:** Opção 1 permite emitir revisões em lote
+5. **Exportar:** Gera CSV para controlo externo
+6. **Sincronizar:** Importa alterações do CSV/Excel
 
 ---
 
@@ -57,7 +61,7 @@ O sistema automatiza a gestão de legendas em ficheiros AutoCAD com dezenas de l
 
 | Ficheiro | Descrição |
 |----------|-----------|
-| `JSJ-GestaoDesenhosV0.lsp` | Código principal LISP (V29) |
+| `JSJ-GestaoDesenhosV0.lsp` | Código principal LISP (V35.1) |
 | `Legenda.dwg` | Template com bloco LEGENDA_JSJ_V1 |
 | `WorkFiles/Claude Project Files/_REF_ATTRIBUTES.md` | Dicionário de atributos do bloco |
 | `WorkFiles/Claude Project Files/_REF_FUNCTIONS.md` | Documentação das funções LISP |
@@ -67,28 +71,36 @@ O sistema automatiza a gestão de legendas em ficheiros AutoCAD com dezenas de l
 
 ---
 
-## 🖥️ Menu Principal
+## 🖥️ Estrutura de Menus
 
 Comando: `GESTAODESENHOSJSJ`
 
+### Menu Principal
 | Opção | Função | Descrição |
 |-------|--------|-----------|
-| **1** | Modificar Legendas | Submenu: importar JSON, definir globais, numerar |
-| **2** | Alterar Campo | Edita um atributo em todos ou alguns desenhos |
-| **3** | Gerar CSV | Exporta lista de desenhos com revisões |
-| **4** | Importar CSV | Atualiza desenhos a partir de CSV editado |
-| **5** | Import Excel | Legacy (redireciona para CSV) |
-| **6** | Gerar Layouts | Cria N layouts a partir do TEMPLATE |
-| **7** | Ordenar Layouts | Reordena tabs por TIPO ou DES_NUM |
+| **1** | Modificar Legendas | Submenu com emissão de revisões e edição |
+| **2** | Exportar Lista | Gera CSV com todos os desenhos |
+| **3** | Importar Lista | Atualiza desenhos a partir de CSV |
+| **4** | Gerir Layouts | Criar e ordenar layouts |
+| **9** | Navegar | Pausa para ver layouts, ENTER volta ao menu |
+| **0** | Sair | Termina o programa |
 
-### Submenu Opção 1
-| Sub | Função |
-|-----|--------|
-| 1 | Importar de ficheiro JSON |
-| 2 | Definir campos globais (CLIENTE, OBRA, etc.) |
-| 3 | Alterar desenho individual (revisões) |
-| 4 | Auto-numerar por TIPO |
-| 5 | Auto-numerar sequencial |
+### Submenu 1: Modificar Legendas
+| Opção | Função | Descrição |
+|-------|--------|-----------|
+| **1** | Emitir Revisão | Nova revisão (TODOS ou seleção: 1,3,5 ou 2-5) |
+| **2** | Alterar Campo | Edita atributo global ou em seleção |
+| **3** | Alterar Desenho Individual | Edita TIPO/TITULO de um desenho |
+| **4** | Definir Utilizador | Define nome para logging |
+| **9** | Navegar | Ver layouts |
+| **0** | Voltar | Regressa ao menu principal |
+
+### Submenu 4: Gerir Layouts
+| Opção | Função | Descrição |
+|-------|--------|-----------|
+| **1** | Gerar Layouts | Cria N layouts a partir de TEMPLATE |
+| **2** | Ordenar Tabs | Reordena por TIPO ou DES_NUM |
+| **0** | Voltar | Regressa ao menu principal |
 
 ---
 
@@ -131,27 +143,28 @@ A tabela de revisões preenche-se de **baixo para cima**:
 | Atributo | Editável | Notas |
 |----------|----------|-------|
 | `REV_A` a `REV_E` | ✅ | Letra da revisão |
-| `DATA_A` a `DATA_E` | ✅ | Data da revisão |
+| `DATA_A` a `DATA_E` | ✅ | Data da revisão (DD-MM-YYYY) |
 | `DESC_A` a `DESC_E` | ✅ | Descrição/motivo |
-| `R` | ❌ Auto | Última revisão ativa (calculado) |
+| `R` | ❌ Auto | Última revisão ativa (A-E) - calculado automaticamente |
 
 ---
 
 ## 🗺️ Roadmap
 
-### FASE 1: Fundações (Single DWG) — **EM CURSO**
+### FASE 1: Fundações (Single DWG) ✅ COMPLETA
 | ID | Tarefa | Estado |
 |----|--------|--------|
-| 1.1 | Validar DES_NUM duplicados | ⬜ |
-| 1.2 | Coluna DWG_SOURCE no CSV | ⬜ |
-| 1.3 | Auto-calcular atributo R | ⬜ |
-| 1.4 | Validar Data Rev B > Rev A | ⬜ |
-| 1.5 | Sistema de logging (.log) | ⬜ |
+| 1.0 | Reorganizar menus | ✅ |
+| 1.1 | Validar DES_NUM duplicados | ✅ |
+| 1.2 | Coluna DWG_SOURCE no CSV | ✅ |
+| 1.3 | Auto-calcular atributo R | ✅ |
+| 1.4 | Validar Data Rev B > Rev A | ✅ |
+| 1.5 | Sistema de logging (.log) | ✅ |
 
-### FASE 2: Produtividade (Single DWG Advanced)
+### FASE 2: Produtividade (Single DWG Advanced) — **EM CURSO**
 | ID | Tarefa | Estado |
 |----|--------|--------|
-| 2.1 | "Emitir Revisão" (congela A → abre B) | ⬜ |
+| 2.1 | "Emitir Revisão" (TODOS ou seleção) | ✅ |
 | 2.2 | Verificar escala Viewport vs Legenda | ⬜ |
 | 2.3 | Batch Rename: Tab = DES_NUM_TIPO | ⬜ |
 | 2.4 | Relatório de desenhos | ⬜ |
@@ -164,6 +177,27 @@ A tabela de revisões preenche-se de **baixo para cima**:
 | 3.3 | Filtrar LPP por DWG aberto | ⬜ |
 | 3.4 | Sync bidirecional DWG ↔ Excel | ⬜ |
 | 3.5 | Lock/Conflict detection | ⬜ |
+
+---
+
+## ✨ Funcionalidades V35
+
+### Emitir Revisão (2.1)
+- Emite nova revisão em **TODOS** os desenhos ou **seleção**
+- Seleção flexível: `1,3,5` (individual) ou `2-5` (range) ou `1,3-5,8` (misto)
+- Data automática (hoje) como default
+- Validação: data da nova revisão deve ser >= anterior
+- Auto-atualiza atributo R
+
+### Modo Navegação
+- Opção **9** em qualquer menu permite navegar pelos layouts
+- Útil para verificar desenhos sem sair do programa
+- **ENTER** para voltar ao menu
+
+### Logging
+- Ficheiro `.log` regista alterações em legendas
+- Utilizador configurável (default: JSJ)
+- Formato: `[TIMESTAMP] [USER] AÇÃO: Detalhes`
 
 ---
 
@@ -187,30 +221,7 @@ O sistema atual funciona perfeitamente num **único ficheiro DWG**. O desafio da
 
 ## 🤝 Como Contribuir
 
-O desenvolvimento é feito com auxílio de **Claude Code**. Para solicitar alterações ou novas funcionalidades, use o formato definido em `_REF_CODEBRIDGE.md`:
-
-```markdown
->_ TO CLAUDE CODE
-
-### Contexto
-[Módulo/função afetada]
-
-### Ficheiros
-- `JSJ-GestaoDesenhosV0.lsp` → função `X`
-
-### Objetivo
-1. [Passo 1]
-2. [Passo 2]
-
-### Restrições
-- [ ] Backup função antiga (sufixo _OLD)
-- [ ] Compatível AutoCAD 2018+
-- [ ] Sem bibliotecas externas
-- [ ] Manter encoding UTF-8
-
-### Critério de Sucesso
-[Teste concreto para validar]
-```
+O desenvolvimento é feito com auxílio de **Claude Code**. Para solicitar alterações ou novas funcionalidades, use o formato definido em `_REF_CODEBRIDGE.md`.
 
 ### Regras de Desenvolvimento
 1. Concluir Fase N antes de iniciar N+1
@@ -229,4 +240,4 @@ Projeto interno JSJ Engenharia.
 ## 📞 Contacto
 
 Desenvolvido para gestão de projetos de estruturas.
-Versão atual: **V29 — Smart Number Match**
+Versão atual: **V35.1**

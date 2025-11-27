@@ -1,5 +1,5 @@
 ;; ============================================================================
-;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V35 - MENU FIX)
+;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V36 - ALTERAR FASE PROJETO)
 ;; ============================================================================
 
 ;; Variável global para o utilizador (persiste durante sessão)
@@ -66,15 +66,17 @@
     (princ "\n   2. Alterar Campo (Global ou Selecao)")
     (princ "\n   3. Alterar Desenho Individual")
     (princ "\n   4. Definir Utilizador")
+    (princ "\n   5. Alterar Fase de Projeto")
     (princ "\n   9. Navegar (ver desenho)")
     (princ "\n   0. Voltar")
-    (initget "1 2 3 4 9 0")
-    (setq optSub (getkword "\n   Opcao [1/2/3/4/9/0]: "))
+    (initget "1 2 3 4 5 9 0")
+    (setq optSub (getkword "\n   Opcao [1/2/3/4/5/9/0]: "))
     (cond
       ((= optSub "1") (Menu_EmitirRevisao))
       ((= optSub "2") (Run_GlobalVars_Selective_V29))
       ((= optSub "3") (ProcessManualReview))
       ((= optSub "4") (SetCurrentUser))
+      ((= optSub "5") (AlterarFaseProjeto))
       ((= optSub "9") (ModoNavegacao))
       ((= optSub "0") (setq loopSub nil))
       ((= optSub nil) (setq loopSub nil))
@@ -87,6 +89,113 @@
 ;; ============================================================================
 (defun Menu_EmitirRevisao ( / )
   (EmitirRevisao_Unificado)
+)
+
+;; ============================================================================
+;; ALTERAR FASE DE PROJETO - Muda fase e pode zerar revisoes
+;; ============================================================================
+(defun AlterarFaseProjeto ( / doc newFase zerarRevs alterarData newData count countRev lay blk handle)
+  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
+  
+  (princ "\n\n=== ALTERAR FASE DE PROJETO ===")
+  (princ "\nExemplos: PROJETO DE EXECUCAO, LICENCIAMENTO, ESTUDO PREVIO")
+  (setq newFase (getstring T "\nNova FASE: "))
+  
+  (if (and newFase (/= newFase ""))
+    (progn
+      ;; Aplicar nova fase a todos os desenhos
+      (princ "\nA aplicar nova fase... ")
+      (setq count 0)
+      (vlax-for lay (vla-get-Layouts doc)
+        (if (and (/= (vla-get-ModelType lay) :vlax-true)
+                 (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
+          (vlax-for blk (vla-get-Block lay)
+            (if (IsTargetBlock blk)
+              (progn
+                (UpdateSingleTag (vla-get-Handle blk) "FASE" newFase)
+                (setq count (1+ count))
+              )
+            )
+          )
+        )
+      )
+      (princ (strcat (itoa count) " desenhos atualizados."))
+      (WriteLog (strcat "FASE: Alterada para '" newFase "' em " (itoa count) " desenhos"))
+      
+      ;; Perguntar se quer zerar revisoes
+      (princ "\n\n--> Pretende APAGAR todas as revisoes (zerar projeto)?")
+      (initget "Sim Nao")
+      (setq zerarRevs (getkword "\n    [Sim/Nao] <Nao>: "))
+      
+      (if (= zerarRevs "Sim")
+        (progn
+          (princ "\nA apagar revisoes... ")
+          (setq countRev 0)
+          (vlax-for lay (vla-get-Layouts doc)
+            (if (and (/= (vla-get-ModelType lay) :vlax-true)
+                     (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
+              (vlax-for blk (vla-get-Block lay)
+                (if (IsTargetBlock blk)
+                  (progn
+                    (setq handle (vla-get-Handle blk))
+                    ;; Apagar todas as revisoes A-E
+                    (foreach letra '("A" "B" "C" "D" "E")
+                      (UpdateSingleTag handle (strcat "REV_" letra) "")
+                      (UpdateSingleTag handle (strcat "DATA_" letra) "")
+                      (UpdateSingleTag handle (strcat "DESC_" letra) "")
+                    )
+                    ;; Limpar R
+                    (UpdateSingleTag handle "R" "")
+                    (setq countRev (1+ countRev))
+                  )
+                )
+              )
+            )
+          )
+          (princ (strcat (itoa countRev) " desenhos zerados."))
+          (WriteLog (strcat "FASE: Revisoes apagadas em " (itoa countRev) " desenhos"))
+        )
+      )
+      
+      ;; Perguntar se quer alterar DATA (data do projeto/primeira emissao)
+      (princ "\n\n--> Pretende alterar a DATA do projeto (primeira emissao)?")
+      (initget "Sim Nao")
+      (setq alterarData (getkword "\n    [Sim/Nao] <Nao>: "))
+      
+      (if (= alterarData "Sim")
+        (progn
+          (princ "\nExemplo: NOVEMBRO 2025")
+          (setq newData (getstring T "\nNova DATA: "))
+          (if (and newData (/= newData ""))
+            (progn
+              (princ "\nA aplicar nova data... ")
+              (setq count 0)
+              (vlax-for lay (vla-get-Layouts doc)
+                (if (and (/= (vla-get-ModelType lay) :vlax-true)
+                         (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
+                  (vlax-for blk (vla-get-Block lay)
+                    (if (IsTargetBlock blk)
+                      (progn
+                        (UpdateSingleTag (vla-get-Handle blk) "DATA" newData)
+                        (setq count (1+ count))
+                      )
+                    )
+                  )
+                )
+              )
+              (princ (strcat (itoa count) " desenhos atualizados."))
+              (WriteLog (strcat "FASE: DATA alterada para '" newData "' em " (itoa count) " desenhos"))
+            )
+          )
+        )
+      )
+      
+      (vla-Regen doc acActiveViewport)
+      (alert (strcat "Fase de Projeto alterada!\n\nNova Fase: " newFase))
+    )
+    (princ "\nCancelado - fase vazia.")
+  )
+  (princ)
 )
 
 ;; ============================================================================
@@ -644,7 +753,7 @@
 (defun UpdateBlockByHandle (handle pairList / ename obj atts tagVal foundVal) (if (not (vl-catch-all-error-p (vl-catch-all-apply 'handent (list handle)))) (setq ename (handent handle))) (if (and ename (setq obj (vlax-ename->vla-object ename))) (if (and (= (vla-get-ObjectName obj) "AcDbBlockReference") (= (vla-get-HasAttributes obj) :vlax-true)) (foreach att (vlax-invoke obj 'GetAttributes) (setq tagVal (strcase (vla-get-TagString att)) foundVal (cdr (assoc tagVal pairList))) (if foundVal (vla-put-TextString att foundVal))))))
 (defun ApplyGlobalValue (targetTag targetVal / doc) (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) (vlax-for lay (vla-get-Layouts doc) (if (/= (vla-get-ModelType lay) :vlax-true) (vlax-for blk (vla-get-Block lay) (if (IsTargetBlock blk) (foreach att (vlax-invoke blk 'GetAttributes) (if (= (strcase (vla-get-TagString att)) targetTag) (vla-put-TextString att targetVal))))))) (vla-Regen doc acActiveViewport))
 (defun GetDrawingList ( / doc listOut atts desNum tipo name) (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)) listOut '()) (vlax-for lay (vla-get-Layouts doc) (setq name (strcase (vla-get-Name lay))) (if (and (/= (vla-get-ModelType lay) :vlax-true) (/= name "TEMPLATE")) (vlax-for blk (vla-get-Block lay) (if (IsTargetBlock blk) (progn (setq desNum "0" tipo "ND") (foreach att (vlax-invoke blk 'GetAttributes) (if (= (strcase (vla-get-TagString att)) "DES_NUM") (setq desNum (vla-get-TextString att))) (if (= (strcase (vla-get-TagString att)) "TIPO") (setq tipo (vla-get-TextString att)))) (setq listOut (cons (list (vla-get-Handle blk) desNum (vla-get-Name lay) tipo) listOut))))))) (setq listOut (vl-sort listOut '(lambda (a b) (< (atoi (cadr a)) (atoi (cadr b)))))) listOut)
-(defun GetExampleTags ( / doc tagList found atts tag) (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)) tagList '() found nil) (vlax-for lay (vla-get-Layouts doc) (if (not found) (vlax-for blk (vla-get-Block lay) (if (IsTargetBlock blk) (progn (foreach att (vlax-invoke blk 'GetAttributes) (setq tag (strcase (vla-get-TagString att))) (if (and (/= tag "DES_NUM") (not (wcmatch tag "REV_?,DATA_?,DESC_?"))) (setq tagList (cons tag tagList)))) (setq found T)))))) (vl-sort tagList '<))
+(defun GetExampleTags ( / doc tagList found atts tag) (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)) tagList '() found nil) (vlax-for lay (vla-get-Layouts doc) (if (not found) (vlax-for blk (vla-get-Block lay) (if (IsTargetBlock blk) (progn (foreach att (vlax-invoke blk 'GetAttributes) (setq tag (strcase (vla-get-TagString att))) (if (and (/= tag "DES_NUM") (/= tag "FASE") (/= tag "R") (not (wcmatch tag "REV_?,DATA_?,DESC_?"))) (setq tagList (cons tag tagList)))) (setq found T)))))) (vl-sort tagList '<))
 (defun FormatNum (n) (if (< n 10) (strcat "0" (itoa n)) (itoa n)))
 (defun EscapeJSON (str / i char result len) (setq result "" len (strlen str) i 1) (while (<= i len) (setq char (substr str i 1)) (cond ((= char "\\") (setq result (strcat result "\\\\"))) ((= char "\"") (setq result (strcat result "\\\""))) (t (setq result (strcat result char)))) (setq i (1+ i))) result)
 (defun StringUnescape (str / result i char nextChar len) (setq result "" len (strlen str) i 1) (while (<= i len) (setq char (substr str i 1)) (if (and (= char "\\") (< i len)) (progn (setq nextChar (substr str (1+ i) 1)) (cond ((= nextChar "\\") (setq result (strcat result "\\"))) ((= nextChar "\"") (setq result (strcat result "\""))) (t (setq result (strcat result char)))) (setq i (1+ i))) (setq result (strcat result char))) (setq i (1+ i))) result)

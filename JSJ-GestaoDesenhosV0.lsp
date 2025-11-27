@@ -1,5 +1,5 @@
 ;; ============================================================================
-;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V33.3 - NAVEGACAO LAYOUTS)
+;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V35 - MENU FIX)
 ;; ============================================================================
 
 ;; Variável global para o utilizador (persiste durante sessão)
@@ -10,6 +10,7 @@
   (setq loop T)
 
   (while loop
+    (textscr)
     (princ "\n\n==============================================")
     (princ "\n          GESTAO DESENHOS JSJ - MENU          ")
     (princ "\n==============================================")
@@ -18,19 +19,19 @@
     (princ "\n 3. Importar Lista de Desenhos")
     (princ "\n 4. Gerir Layouts")
     (princ "\n----------------------------------------------")
-    (princ "\n N. Navegar (ver desenho)")
+    (princ "\n 9. Navegar (ver desenho)")
     (princ "\n 0. Sair")
     (princ "\n==============================================")
 
-    (initget "1 2 3 4 N 0")
-    (setq opt (getkword "\nEscolha uma opção [1/2/3/4/N/0]: "))
+    (initget "1 2 3 4 9 0")
+    (setq opt (getkword "\nEscolha uma opcao [1/2/3/4/9/0]: "))
 
     (cond
       ((= opt "1") (Menu_ModificarLegendas))
       ((= opt "2") (Menu_Exportar))
       ((= opt "3") (Menu_Importar))
       ((= opt "4") (Menu_GerirLayouts))
-      ((= opt "N") (ModoNavegacao))
+      ((= opt "9") (ModoNavegacao))
       ((= opt "0") (setq loop nil))
       ((= opt nil) (setq loop nil)) 
     )
@@ -58,22 +59,23 @@
 (defun Menu_ModificarLegendas ( / loopSub optSub)
   (setq loopSub T)
   (while loopSub
+    (textscr)
     (princ "\n\n   --- MODIFICAR LEGENDAS ---")
     (princ (strcat "\n   [Utilizador: " (if *JSJ_USER* *JSJ_USER* "JSJ") "]"))
     (princ "\n   1. Emitir Revisao")
     (princ "\n   2. Alterar Campo (Global ou Selecao)")
     (princ "\n   3. Alterar Desenho Individual")
     (princ "\n   4. Definir Utilizador")
-    (princ "\n   N. Navegar (ver desenho)")
+    (princ "\n   9. Navegar (ver desenho)")
     (princ "\n   0. Voltar")
-    (initget "1 2 3 4 N 0")
-    (setq optSub (getkword "\n   Opcao [1/2/3/4/N/0]: "))
+    (initget "1 2 3 4 9 0")
+    (setq optSub (getkword "\n   Opcao [1/2/3/4/9/0]: "))
     (cond
       ((= optSub "1") (Menu_EmitirRevisao))
       ((= optSub "2") (Run_GlobalVars_Selective_V29))
       ((= optSub "3") (ProcessManualReview))
       ((= optSub "4") (SetCurrentUser))
-      ((= optSub "N") (ModoNavegacao))
+      ((= optSub "9") (ModoNavegacao))
       ((= optSub "0") (setq loopSub nil))
       ((= optSub nil) (setq loopSub nil))
     )

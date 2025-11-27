@@ -3,8 +3,8 @@
 ## Estado Atual
 | Campo | Valor |
 |-------|-------|
-| **Fase** | 1 — Fundações (COMPLETA) |
-| **Tarefa** | Pronto para Fase 2 |
+| **Fase** | 2 — Produtividade |
+| **Tarefa** | 2.1 — Emitir Revisão (Concluído) |
 | **Blockers** | Nenhum |
 
 ---
@@ -28,7 +28,7 @@
 
 | ID | Tarefa | Prio | Estado |
 |----|--------|------|--------|
-| 2.1 | "Emitir Revisão" (congela A → abre B) | Alta | ⬜ |
+| 2.1 | "Emitir Revisão" (congela A → abre B) | Alta | ✅ |
 | 2.2 | Verificar escala Viewport vs Legenda | Média | ⬜ |
 | 2.3 | Batch Rename: Tab = DES_NUM_TIPO | Média | ⬜ |
 | 2.4 | Relatório de Desenhos | Baixa | ⬜ |

@@ -1,5 +1,5 @@
 ;; ============================================================================
-;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V32 - CORREÇÕES FASE 1)
+;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V33 - EMITIR REVISAO)
 ;; ============================================================================
 
 ;; Variável global para o utilizador (persiste durante sessão)
@@ -46,17 +46,41 @@
   (while loopSub
     (textscr)
     (princ "\n\n   --- MODIFICAR LEGENDAS ---")
-    (princ (strcat "\n   [Utilizador: " (if *JSJ_USER* *JSJ_USER* "<não definido>") "]"))
-    (princ "\n   1. Alterar Campo (Global ou Seleção)")
-    (princ "\n   2. Alterar Desenho Individual")
-    (princ "\n   3. Definir Utilizador")
+    (princ (strcat "\n   [Utilizador: " (if *JSJ_USER* *JSJ_USER* "<nao definido>") "]"))
+    (princ "\n   1. Emitir Revisao")
+    (princ "\n   2. Alterar Campo (Global ou Selecao)")
+    (princ "\n   3. Alterar Desenho Individual")
+    (princ "\n   4. Definir Utilizador")
     (princ "\n   0. Voltar")
-    (initget "1 2 3 0")
-    (setq optSub (getkword "\n   Opção [1/2/3/0]: "))
+    (initget "1 2 3 4 0")
+    (setq optSub (getkword "\n   Opcao [1/2/3/4/0]: "))
     (cond
-      ((= optSub "1") (Run_GlobalVars_Selective_V29))
-      ((= optSub "2") (ProcessManualReview))
-      ((= optSub "3") (SetCurrentUser))
+      ((= optSub "1") (Menu_EmitirRevisao))
+      ((= optSub "2") (Run_GlobalVars_Selective_V29))
+      ((= optSub "3") (ProcessManualReview))
+      ((= optSub "4") (SetCurrentUser))
+      ((= optSub "0") (setq loopSub nil))
+      ((= optSub nil) (setq loopSub nil))
+    )
+  )
+)
+
+;; ============================================================================
+;; SUBMENU: EMITIR REVISAO (2.1)
+;; ============================================================================
+(defun Menu_EmitirRevisao ( / loopSub optSub)
+  (setq loopSub T)
+  (while loopSub
+    (textscr)
+    (princ "\n\n   --- EMITIR REVISAO ---")
+    (princ "\n   1. Emitir em TODOS os desenhos")
+    (princ "\n   2. Emitir em desenho especifico")
+    (princ "\n   0. Voltar")
+    (initget "1 2 0")
+    (setq optSub (getkword "\n   Opcao [1/2/0]: "))
+    (cond
+      ((= optSub "1") (EmitirRevisao_Todos))
+      ((= optSub "2") (EmitirRevisao_Individual))
       ((= optSub "0") (setq loopSub nil))
       ((= optSub nil) (setq loopSub nil))
     )
@@ -285,6 +309,188 @@
     )
   )
   foundLetter
+)
+
+;; Função auxiliar: retorna a próxima letra de revisão
+(defun GetNextRevisionLetter (currentLetter)
+  (cond
+    ((null currentLetter) "A")
+    ((= currentLetter "") "A")
+    ((= currentLetter "A") "B")
+    ((= currentLetter "B") "C")
+    ((= currentLetter "C") "D")
+    ((= currentLetter "D") "E")
+    ((= currentLetter "E") nil) ;; Máximo atingido
+    (T "A")
+  )
+)
+
+;; ============================================================================
+;; EMITIR REVISAO - TODOS OS DESENHOS (2.1)
+;; ============================================================================
+(defun EmitirRevisao_Todos ( / doc drawList revData revDesc count currentLetter nextLetter handle desNum dateStr)
+  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
+  (setq drawList (GetDrawingList))
+  
+  (if (null drawList)
+    (progn
+      (alert "Nenhum desenho encontrado.")
+      (princ "\nNenhum desenho encontrado.")
+    )
+    (progn
+      (textscr)
+      (princ "\n\n=== EMITIR REVISAO EM TODOS OS DESENHOS ===")
+      (princ (strcat "\nTotal de desenhos: " (itoa (length drawList))))
+      
+      ;; Mostrar estado atual de cada desenho
+      (princ "\n\nEstado atual das revisoes:")
+      (foreach item drawList
+        (setq handle (car item))
+        (setq desNum (cadr item))
+        (setq currentLetter (GetMaxRevisionLetterByHandle handle))
+        (setq nextLetter (GetNextRevisionLetter currentLetter))
+        (if nextLetter
+          (princ (strcat "\n  Des " desNum ": " (if currentLetter currentLetter "-") " -> " nextLetter))
+          (princ (strcat "\n  Des " desNum ": " currentLetter " (MAX - nao pode avancar)"))
+        )
+      )
+      
+      (princ "\n")
+      (initget "Sim Nao")
+      (if (= (getkword "\nEmitir nova revisao em todos? [Sim/Nao] <Nao>: ") "Sim")
+        (progn
+          (setq dateStr (GetTodayDate))
+          (setq revData (getstring T (strcat "\nData da revisao [" dateStr "]: ")))
+          (if (= revData "") (setq revData dateStr))
+          (setq revDesc (getstring T "\nDescricao da revisao: "))
+          
+          (setq count 0)
+          (foreach item drawList
+            (setq handle (car item))
+            (setq desNum (cadr item))
+            (setq currentLetter (GetMaxRevisionLetterByHandle handle))
+            (setq nextLetter (GetNextRevisionLetter currentLetter))
+            
+            (if nextLetter
+              (progn
+                (EmitirRevisaoBloco handle nextLetter revData revDesc)
+                (setq count (1+ count))
+                (princ (strcat "\n  Des " desNum ": Emitida REV_" nextLetter))
+              )
+            )
+          )
+          
+          (vla-Regen doc acActiveViewport)
+          (WriteLog (strcat "EMITIR REVISAO GLOBAL: " (itoa count) " desenhos - " revData " - " revDesc))
+          (alert (strcat "Revisao emitida em " (itoa count) " desenhos."))
+        )
+        (princ "\nOperacao cancelada.")
+      )
+    )
+  )
+  (graphscr)
+  (princ)
+)
+
+;; ============================================================================
+;; EMITIR REVISAO - DESENHO INDIVIDUAL (2.1)
+;; ============================================================================
+(defun EmitirRevisao_Individual ( / doc drawList i item userIdx handle desNum currentLetter nextLetter revData revDesc dateStr loop)
+  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
+  (setq drawList (GetDrawingList))
+  
+  (if (null drawList)
+    (progn
+      (alert "Nenhum desenho encontrado.")
+      (princ "\nNenhum desenho encontrado.")
+    )
+    (progn
+      (setq loop T)
+      (while loop
+        (textscr)
+        (princ "\n\n=== EMITIR REVISAO - SELECIONAR DESENHO ===\n")
+        (setq i 0)
+        (foreach item drawList
+          (setq handle (car item))
+          (setq desNum (cadr item))
+          (setq currentLetter (GetMaxRevisionLetterByHandle handle))
+          (setq nextLetter (GetNextRevisionLetter currentLetter))
+          (princ (strcat "\n " (itoa (1+ i)) ". [Des: " desNum "] Rev: " 
+                         (if currentLetter currentLetter "-")
+                         (if nextLetter (strcat " -> " nextLetter) " (MAX)")
+                         " - Tab: " (caddr item)))
+          (setq i (1+ i))
+        )
+        
+        (setq userIdx (getint (strcat "\nEscolha o desenho (1-" (itoa i) ") ou 0 para sair: ")))
+        
+        (cond
+          ((or (null userIdx) (= userIdx 0))
+            (setq loop nil)
+          )
+          ((and (> userIdx 0) (<= userIdx i))
+            (setq item (nth (1- userIdx) drawList))
+            (setq handle (car item))
+            (setq desNum (cadr item))
+            (setq currentLetter (GetMaxRevisionLetterByHandle handle))
+            (setq nextLetter (GetNextRevisionLetter currentLetter))
+            
+            (if nextLetter
+              (progn
+                (princ (strcat "\n\nEmitir REV_" nextLetter " para Desenho " desNum))
+                (setq dateStr (GetTodayDate))
+                (setq revData (getstring T (strcat "\nData [" dateStr "]: ")))
+                (if (= revData "") (setq revData dateStr))
+                (setq revDesc (getstring T "\nDescricao: "))
+                
+                (EmitirRevisaoBloco handle nextLetter revData revDesc)
+                (vla-Regen doc acActiveViewport)
+                (WriteLog (strcat "EMITIR REVISAO: Des " desNum " - REV_" nextLetter " (" revData ") " revDesc))
+                (princ (strcat "\nREV_" nextLetter " emitida com sucesso!"))
+              )
+              (princ "\nEste desenho ja esta na revisao maxima (E).")
+            )
+            
+            (initget "Sim Nao")
+            (if (/= (getkword "\nEmitir outra revisao? [Sim/Nao] <Nao>: ") "Sim")
+              (setq loop nil)
+            )
+          )
+          (T (princ "\nNumero invalido."))
+        )
+      )
+    )
+  )
+  (graphscr)
+  (princ)
+)
+
+;; ============================================================================
+;; FUNCOES AUXILIARES PARA EMITIR REVISAO
+;; ============================================================================
+
+;; Emite revisão num bloco específico
+(defun EmitirRevisaoBloco (handle revLetter revData revDesc)
+  (UpdateSingleTag handle (strcat "REV_" revLetter) revLetter)
+  (UpdateSingleTag handle (strcat "DATA_" revLetter) revData)
+  (UpdateSingleTag handle (strcat "DESC_" revLetter) revDesc)
+  (UpdateAttributeR handle)
+)
+
+;; Obtém a letra da última revisão por handle
+(defun GetMaxRevisionLetterByHandle (handle / ename obj)
+  (if (not (vl-catch-all-error-p (vl-catch-all-apply 'handent (list handle))))
+    (setq ename (handent handle)))
+  (if (and ename (setq obj (vlax-ename->vla-object ename)))
+    (GetMaxRevisionLetter obj)
+    nil
+  )
+)
+
+;; Retorna a data de hoje no formato DD-MM-YYYY
+(defun GetTodayDate ( / dateStr)
+  (setq dateStr (menucmd "M=$(edtime,$(getvar,date),DD-MO-YYYY)"))
+  dateStr
 )
 
 ;; ============================================================================

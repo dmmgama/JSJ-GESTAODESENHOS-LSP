@@ -1,10 +1,45 @@
 ;; ============================================================================
-;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V36 - ALTERAR FASE PROJETO)
+;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V36.1 - FIX ORDEM FUNCOES)
 ;; ============================================================================
 
 ;; Variável global para o utilizador (persiste durante sessão)
 (setq *JSJ_USER* nil)
 
+;; ============================================================================
+;; FUNCOES AUXILIARES BASICAS (devem estar no inicio)
+;; ============================================================================
+(defun IsTargetBlock (blk) 
+  (and (= (vla-get-ObjectName blk) "AcDbBlockReference") 
+       (= (strcase (vla-get-EffectiveName blk)) "LEGENDA_JSJ_V1"))
+)
+
+(defun GetAttValue (blk tag / atts val) 
+  (setq atts (vlax-invoke blk 'GetAttributes) val "") 
+  (foreach att atts 
+    (if (= (strcase (vla-get-TagString att)) (strcase tag)) 
+      (setq val (vla-get-TextString att)))) 
+  val
+)
+
+(defun UpdateSingleTag (handle tag val / ename obj atts) 
+  (if (not (vl-catch-all-error-p (vl-catch-all-apply 'handent (list handle)))) 
+    (setq ename (handent handle))) 
+  (if (and ename (setq obj (vlax-ename->vla-object ename))) 
+    (progn 
+      (setq atts (vlax-invoke obj 'GetAttributes)) 
+      (foreach att atts 
+        (if (= (strcase (vla-get-TagString att)) (strcase tag)) 
+          (vla-put-TextString att val))) 
+      (vla-Update obj)))
+)
+
+(defun FormatNum (n) 
+  (if (< n 10) (strcat "0" (itoa n)) (itoa n))
+)
+
+;; ============================================================================
+;; MENU PRINCIPAL
+;; ============================================================================
 (defun c:GESTAODESENHOSJSJ ( / loop opt)
   (vl-load-com)
   (setq loop T)

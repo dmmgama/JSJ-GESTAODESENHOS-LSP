@@ -34,6 +34,7 @@
 | `GetLayoutsRaw` | doc | lista layouts | Exclui Model e TEMPLATE |
 | `StrSplit` | str, delim | lista | Divide string |
 | `GetDWGName` | — | string | Nome do DWG sem path/extensão |
+| `FindDuplicateDES_NUM` | dataList | string/nil | Detecta DES_NUM duplicados |
 
 ### Funções de Atualização
 | Função | Descrição |

@@ -3,13 +3,13 @@
 ## Estado Atual
 | Campo | Valor |
 |-------|-------|
-| **Fase** | 1 — Fundações |
-| **Tarefa** | 1.0 — Setup concluído |
+| **Fase** | 1 — Fundações (COMPLETA) |
+| **Tarefa** | Pronto para Fase 2 |
 | **Blockers** | Nenhum |
 
 ---
 
-## FASE 1: Fundações (Single DWG)
+## FASE 1: Fundações (Single DWG) ✅ COMPLETA
 **Objetivo:** Motor básico infalível num só ficheiro.
 
 | ID | Tarefa | Prio | Estado |
@@ -17,9 +17,9 @@
 | 1.0 | Reorganizar menus | Alta | ✅ |
 | 1.1 | Validar DES_NUM duplicados | Alta | ✅ |
 | 1.2 | Coluna DWG_SOURCE no CSV | Alta | ✅ |
-| 1.3 | Auto-calcular atributo R | Média | ⬜ |
-| 1.4 | Sanity: Data Rev B > Rev A | Média | ⬜ |
-| 1.5 | Logging (.log) | Baixa | ⬜ |
+| 1.3 | Auto-calcular atributo R | Média | ✅ |
+| 1.4 | Sanity: Data Rev B > Rev A | Média | ✅ |
+| 1.5 | Logging (.log) | Baixa | ✅ |
 
 ---
 

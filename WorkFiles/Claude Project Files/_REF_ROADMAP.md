@@ -15,7 +15,7 @@
 | ID | Tarefa | Prio | Estado |
 |----|--------|------|--------|
 | 1.1 | Validar DES_NUM duplicados | Alta | ⬜ |
-| 1.2 | Coluna DWG_SOURCE no CSV | Alta | ⬜ |
+| 1.2 | Coluna DWG_SOURCE no CSV | Alta | ✅ |
 | 1.3 | Auto-calcular atributo R | Média | ⬜ |
 | 1.4 | Sanity: Data Rev B > Rev A | Média | ⬜ |
 | 1.5 | Logging (.log) | Baixa | ⬜ |

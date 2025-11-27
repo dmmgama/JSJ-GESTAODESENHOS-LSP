@@ -33,6 +33,7 @@
 | `GetDrawingList` | — | lista | (handle, num, tab, tipo) ordenada |
 | `GetLayoutsRaw` | doc | lista layouts | Exclui Model e TEMPLATE |
 | `StrSplit` | str, delim | lista | Divide string |
+| `GetDWGName` | — | string | Nome do DWG sem path/extensão |
 
 ### Funções de Atualização
 | Função | Descrição |

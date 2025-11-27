@@ -166,40 +166,69 @@
   (if (= errors "") nil errors)
 )
 
-(defun FindDuplicateDES_NUM (dataList / numList duplicates item num seen result idx)
+(defun FindDuplicateDES_NUM (dataList / duplicates item num seen result)
   (setq seen '() duplicates '())
   
-  ;; Encontrar indice de DES_NUM (assumir que está presente)
-  (setq idx nil)
-  (setq i 0)
-  (while (and (< i (length (car dataList))) (null idx))
-    (if (= (nth i (car dataList)) "DES_NUM")
-      (setq idx i)
+  ;; Assumir que dataList é uma lista de listas, e precisamos procurar DES_NUM
+  ;; A função antiga esperava (DWG TIPO NUM TITULO ...) onde NUM é índice 2
+  ;; Como agora pode variar, vamos assumir que sempre existe DES_NUM
+  
+  (foreach item dataList
+    ;; Tentar encontrar DES_NUM na posição típica ou procurar
+    (setq num nil)
+    
+    ;; Se a lista tem pelo menos 3 elementos, assumir índice 2 (compatibilidade)
+    (if (>= (length item) 3)
+      (setq num (nth 2 item))
     )
-    (setq i (1+ i))
+    
+    (if num
+      (if (assoc num seen)
+        (setq duplicates (cons (strcat "DES_NUM " num) duplicates))
+        (setq seen (cons (cons num T) seen))
+      )
+    )
   )
   
-  (if (null idx)
-    nil
+  (if duplicates
     (progn
-      (foreach item dataList
-        (setq num (nth idx item))
-        (if (assoc num seen)
-          (setq duplicates (cons (strcat "DES_NUM " num) duplicates))
-          (setq seen (cons (cons num T) seen))
-        )
+      (setq result "")
+      (foreach dup (reverse duplicates)
+        (setq result (strcat result dup "\n"))
       )
-      (if duplicates
-        (progn
-          (setq result "")
-          (foreach dup (reverse duplicates)
-            (setq result (strcat result dup "\n"))
+      result
+    )
+    nil
+  )
+)
+
+;; Versão melhorada que recebe o índice de DES_NUM
+(defun FindDuplicateDES_NUM_ByIndex (dataList desNumIdx / duplicates item num seen result)
+  (setq seen '() duplicates '())
+  
+  (foreach item dataList
+    (if (and (>= (length item) (1+ desNumIdx)) desNumIdx)
+      (progn
+        (setq num (nth desNumIdx item))
+        (if (and num (/= num ""))
+          (if (assoc num seen)
+            (setq duplicates (cons (strcat "DES_NUM " num) duplicates))
+            (setq seen (cons (cons num T) seen))
           )
-          result
         )
-        nil
       )
     )
+  )
+  
+  (if duplicates
+    (progn
+      (setq result "")
+      (foreach dup (reverse duplicates)
+        (setq result (strcat result dup "\n"))
+      )
+      result
+    )
+    nil
   )
 )
 
@@ -590,7 +619,7 @@
 ;; ============================================================================
 (defun Run_GenerateCSV_Engine (customTags / doc path dwgName defaultName csvFile fileDes layoutList dataList sortMode 
                                              duplicates continueExport userChoice dateErrors allDateErrors 
-                                             blk layName header row tags)
+                                             blk layName header row tags desNumIdx)
   (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
   (setq path (getvar "DWGPREFIX"))
   (setq dwgName (GetDWGName))
@@ -601,6 +630,9 @@
     ;; Default: DWG_SOURCE, TIPO, DES_NUM, TITULO, REVISAO_ATUAL (3 colunas), ID_CAD
     (setq tags '("DWG_SOURCE" "TIPO" "DES_NUM" "TITULO" "REVISAO_ATUAL" "ID_CAD"))
   )
+  
+  ;; Encontrar índice de DES_NUM para validação de duplicados
+  (setq desNumIdx (GetTagIndex tags "DES_NUM"))
   
   (princ "\nA recolher dados (Ignorando TEMPLATE)... ")
   (setq dataList '())
@@ -624,7 +656,12 @@
     )
   )
   
-  (setq duplicates (FindDuplicateDES_NUM dataList))
+  ;; Validar duplicados apenas se DES_NUM estiver presente
+  (if desNumIdx
+    (setq duplicates (FindDuplicateDES_NUM_ByIndex dataList desNumIdx))
+    (setq duplicates nil)
+  )
+  
   (setq continueExport T)
   
   (if duplicates

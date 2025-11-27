@@ -1,0 +1,15 @@
+# AutoCAD temp files
+*.bak
+*.dwl
+*.dwl2
+*.ac$
+*.sv$
+*_recover.dwg
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Old/backup folders
+Old/
+OLD/

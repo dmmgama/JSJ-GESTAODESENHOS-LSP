@@ -492,6 +492,17 @@
       (if (null selectedTags)
         (princ "\nNenhum tag selecionado.")
         (progn
+          ;; Forcar inclusao de campos obrigatorios (DES_NUM e ID_CAD)
+          (setq mandatoryTags '("DES_NUM" "ID_CAD"))
+          (foreach mandatory mandatoryTags
+            (if (not (member mandatory selectedTags))
+              (progn
+                (setq selectedTags (cons mandatory selectedTags))
+                (princ (strcat "\n[INFO] Campo obrigatorio adicionado automaticamente: " mandatory))
+              )
+            )
+          )
+          
           (princ (strcat "\n\nTags selecionados: " (itoa (length selectedTags))))
           (foreach tag selectedTags
             (princ (strcat "\n  - " tag))

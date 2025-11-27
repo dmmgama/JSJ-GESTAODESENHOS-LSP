@@ -1,5 +1,5 @@
 ;; ============================================================================
-;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V36.1 - FIX ORDEM FUNCOES)
+;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V36.2 - FIX TODAS FUNCOES)
 ;; ============================================================================
 
 ;; Variável global para o utilizador (persiste durante sessão)
@@ -35,6 +35,62 @@
 
 (defun FormatNum (n) 
   (if (< n 10) (strcat "0" (itoa n)) (itoa n))
+)
+
+(defun StrSplit (str del / pos len lst) 
+  (setq len (strlen del)) 
+  (while (setq pos (vl-string-search del str)) 
+    (setq lst (cons (vl-string-trim " " (substr str 1 pos)) lst) 
+          str (substr str (+ 1 pos len)))) 
+  (reverse (cons (vl-string-trim " " str) lst))
+)
+
+(defun GetExampleTags ( / doc tagList found atts tag) 
+  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)) 
+        tagList '() 
+        found nil) 
+  (vlax-for lay (vla-get-Layouts doc) 
+    (if (not found) 
+      (vlax-for blk (vla-get-Block lay) 
+        (if (IsTargetBlock blk) 
+          (progn 
+            (foreach att (vlax-invoke blk 'GetAttributes) 
+              (setq tag (strcase (vla-get-TagString att))) 
+              (if (and (/= tag "DES_NUM") 
+                       (/= tag "FASE") 
+                       (/= tag "R") 
+                       (not (wcmatch tag "REV_?,DATA_?,DESC_?"))) 
+                (setq tagList (cons tag tagList)))) 
+            (setq found T)))))) 
+  (vl-sort tagList '<)
+)
+
+(defun GetDrawingList ( / doc listOut atts desNum tipo name) 
+  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)) 
+        listOut '()) 
+  (vlax-for lay (vla-get-Layouts doc) 
+    (setq name (strcase (vla-get-Name lay))) 
+    (if (and (/= (vla-get-ModelType lay) :vlax-true) 
+             (/= name "TEMPLATE")) 
+      (vlax-for blk (vla-get-Block lay) 
+        (if (IsTargetBlock blk) 
+          (progn 
+            (setq desNum "0" tipo "ND") 
+            (foreach att (vlax-invoke blk 'GetAttributes) 
+              (if (= (strcase (vla-get-TagString att)) "DES_NUM") 
+                (setq desNum (vla-get-TextString att))) 
+              (if (= (strcase (vla-get-TagString att)) "TIPO") 
+                (setq tipo (vla-get-TextString att)))) 
+            (setq listOut (cons (list (vla-get-Handle blk) desNum (vla-get-Name lay) tipo) listOut))))))) 
+  (setq listOut (vl-sort listOut '(lambda (a b) (< (atoi (cadr a)) (atoi (cadr b)))))) 
+  listOut
+)
+
+(defun GetDWGName ( / rawName baseName) 
+  (setq rawName (getvar "DWGNAME")) 
+  (if (or (= rawName "") (= rawName nil) (wcmatch (strcase rawName) "DRAWING*.DWG")) 
+    "SEM_NOME" 
+    (vl-filename-base rawName))
 )
 
 ;; ============================================================================

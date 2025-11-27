@@ -1,5 +1,5 @@
 ;; ============================================================================
-;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V29 - SMART NUMBER MATCH)
+;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V30 - MENUS REORGANIZADOS)
 ;; ============================================================================
 
 (defun c:GESTAODESENHOSJSJ ( / loop opt)
@@ -11,27 +11,21 @@
     (princ "\n\n==============================================")
     (princ "\n          GESTAO DESENHOS JSJ - MENU          ")
     (princ "\n==============================================")
-    (princ "\n 1. Modificar Legendas (Manual/JSON)")
-    (princ "\n 2. Alterar Campo Específico (Global ou Seleção)")
-    (princ "\n 3. Gerar Lista CSV (Exportar)")
-    (princ "\n 4. Importar Lista CSV (Importar)")
-    (princ "\n 5. Importar via Excel ActiveX (Legacy)")
-    (princ "\n 6. GERAR NOVOS LAYOUTS (Copia Template)")
-    (princ "\n 7. ORDENAR LAYOUTS (Por Tipo ou Numero)")
+    (princ "\n 1. Modificar Legendas")
+    (princ "\n 2. Exportar Lista de Desenhos")
+    (princ "\n 3. Importar Lista de Desenhos")
+    (princ "\n 4. Gerir Layouts")
     (princ "\n 0. Sair")
     (princ "\n==============================================")
 
-    (initget "1 2 3 4 5 6 7 0")
-    (setq opt (getkword "\nEscolha uma opção [1/2/3/4/5/6/7/0]: "))
+    (initget "1 2 3 4 0")
+    (setq opt (getkword "\nEscolha uma opção [1/2/3/4/0]: "))
 
     (cond
-      ((= opt "1") (Run_MasterImport_Menu))
-      ((= opt "2") (Run_GlobalVars_Selective_V29)) ;; CORRIGIDO
-      ((= opt "3") (Run_GenerateCSV))
-      ((= opt "4") (Run_ImportCSV))
-      ((= opt "5") (Run_ImportExcel_Flexible))
-      ((= opt "6") (Run_GenerateLayouts_FromTemplate_V26))
-      ((= opt "7") (Run_SortLayouts_Engine))
+      ((= opt "1") (Menu_ModificarLegendas))
+      ((= opt "2") (Menu_Exportar))
+      ((= opt "3") (Menu_Importar))
+      ((= opt "4") (Menu_GerirLayouts))
       ((= opt "0") (setq loop nil))
       ((= opt nil) (setq loop nil)) 
     )
@@ -39,6 +33,98 @@
   (graphscr)
   (princ "\nGestao Desenhos JSJ Terminada.")
   (princ)
+)
+
+;; ============================================================================
+;; SUBMENU 1: MODIFICAR LEGENDAS
+;; ============================================================================
+(defun Menu_ModificarLegendas ( / loopSub optSub)
+  (setq loopSub T)
+  (while loopSub
+    (textscr)
+    (princ "\n\n   --- MODIFICAR LEGENDAS ---")
+    (princ "\n   1. Alterar Campo (Global ou Seleção)")
+    (princ "\n   2. Alterar Desenho Individual")
+    (princ "\n   0. Voltar")
+    (initget "1 2 0")
+    (setq optSub (getkword "\n   Opção [1/2/0]: "))
+    (cond
+      ((= optSub "1") (Run_GlobalVars_Selective_V29))
+      ((= optSub "2") (ProcessManualReview))
+      ((= optSub "0") (setq loopSub nil))
+      ((= optSub nil) (setq loopSub nil))
+    )
+  )
+)
+
+;; ============================================================================
+;; SUBMENU 2: EXPORTAR
+;; ============================================================================
+(defun Menu_Exportar ( / loopSub optSub)
+  (setq loopSub T)
+  (while loopSub
+    (textscr)
+    (princ "\n\n   --- EXPORTAR LISTA DE DESENHOS ---")
+    (princ "\n   1. Gerar CSV")
+    (princ "\n   2. Exportar JSON")
+    (princ "\n   0. Voltar")
+    (initget "1 2 0")
+    (setq optSub (getkword "\n   Opção [1/2/0]: "))
+    (cond
+      ((= optSub "1") (Run_GenerateCSV))
+      ((= optSub "2") (princ "\nEm desenvolvimento."))
+      ((= optSub "0") (setq loopSub nil))
+      ((= optSub nil) (setq loopSub nil))
+    )
+  )
+)
+
+;; ============================================================================
+;; SUBMENU 3: IMPORTAR
+;; ============================================================================
+(defun Menu_Importar ( / loopSub optSub)
+  (setq loopSub T)
+  (while loopSub
+    (textscr)
+    (princ "\n\n   --- IMPORTAR LISTA DE DESENHOS ---")
+    (princ "\n   1. Importar CSV")
+    (princ "\n   2. Importar JSON")
+    (princ "\n   0. Voltar")
+    (initget "1 2 0")
+    (setq optSub (getkword "\n   Opção [1/2/0]: "))
+    (cond
+      ((= optSub "1") (Run_ImportCSV))
+      ((= optSub "2") (ProcessJSONImport))
+      ((= optSub "0") (setq loopSub nil))
+      ((= optSub nil) (setq loopSub nil))
+    )
+  )
+)
+
+;; ============================================================================
+;; SUBMENU 4: GERIR LAYOUTS
+;; ============================================================================
+(defun Menu_GerirLayouts ( / loopSub optSub)
+  (setq loopSub T)
+  (while loopSub
+    (textscr)
+    (princ "\n\n   --- GERIR LAYOUTS ---")
+    (princ "\n   1. Gerar Novos (TEMPLATE)")
+    (princ "\n   2. Ordenar Tabs")
+    (princ "\n   3. Numerar por TIPO")
+    (princ "\n   4. Numerar SEQUENCIAL")
+    (princ "\n   0. Voltar")
+    (initget "1 2 3 4 0")
+    (setq optSub (getkword "\n   Opção [1/2/3/4/0]: "))
+    (cond
+      ((= optSub "1") (Run_GenerateLayouts_FromTemplate_V26))
+      ((= optSub "2") (Run_SortLayouts_Engine))
+      ((= optSub "3") (AutoNumberByType))
+      ((= optSub "4") (AutoNumberSequential))
+      ((= optSub "0") (setq loopSub nil))
+      ((= optSub nil) (setq loopSub nil))
+    )
+  )
 )
 
 ;; ============================================================================
@@ -126,18 +212,18 @@
 )
 
 ;; ============================================================================
-;; RESTANTE CÓDIGO (MANTIDO - Módulos 1, 3, 4, 5, 6, 7 e Auxiliares)
+;; FUNÇÕES OPERACIONAIS
 ;; ============================================================================
 (defun Run_SortLayouts_Engine ( / doc layouts templateLay layoutList sortMode i item layObj blkInfo valTipo valNum) (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) (setq layouts (vla-get-Layouts doc)) (initget "1 2") (setq sortMode (getkword "\nCritério de Ordenação? [1] Por TIPO (e Numero) / [2] Apenas NUMERO <2>: ")) (if (not sortMode) (setq sortMode "2")) (princ "\nA ler atributos... ") (setq layoutList '()) (vlax-for lay layouts (if (and (/= (vla-get-ModelType lay) :vlax-true) (/= (strcase (vla-get-Name lay)) "TEMPLATE")) (progn (setq blkInfo (GetBlockDataInLayout (vla-get-Block lay) "LEGENDA_JSJ_V1")) (setq valTipo (car blkInfo)) (setq valNum (cadr blkInfo)) (setq layoutList (cons (list lay valTipo (atoi valNum)) layoutList))))) (cond ((= sortMode "1") (setq layoutList (vl-sort layoutList '(lambda (a b) (if (= (strcase (cadr a)) (strcase (cadr b))) (< (caddr a) (caddr b)) (< (strcase (cadr a)) (strcase (cadr b)))))))) ((= sortMode "2") (setq layoutList (vl-sort layoutList '(lambda (a b) (< (caddr a) (caddr b))))))) (princ "\nA reordenar... ") (if (not (vl-catch-all-error-p (setq templateLay (vla-Item layouts "TEMPLATE")))) (vla-put-TabOrder templateLay 1)) (setq i 2) (foreach item layoutList (setq layObj (car item)) (vl-catch-all-apply 'vla-put-TabOrder (list layObj i)) (setq i (1+ i))) (vla-Regen doc acActiveViewport) (alert "Layouts Reordenados!") (princ))
 (defun GetBlockDataInLayout (blkDef blkName / valTipo valNum) (setq valTipo "" valNum "0") (vlax-for obj blkDef (if (and (= (vla-get-ObjectName obj) "AcDbBlockReference") (or (= (strcase (vla-get-Name obj)) (strcase blkName)) (= (strcase (vla-get-EffectiveName obj)) (strcase blkName)))) (progn (setq valTipo (GetAttValue obj "TIPO")) (setq valNum (GetAttValue obj "DES_NUM"))))) (list valTipo valNum))
-(defun Run_GenerateLayouts_FromTemplate_V26 ( / doc layouts legendBlkName startNum endNum prefix globalData layName count refBlock foundLegend paperSpace) (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) (setq layouts (vla-get-Layouts doc)) (setq legendBlkName "LEGENDA_JSJ_V1") (if (not (catch-apply 'vla-Item (list layouts "TEMPLATE"))) (progn (alert "ERRO: Layout 'TEMPLATE' não existe.") (exit))) (setq startNum (getint "\nNúmero do Primeiro Desenho a criar (ex: 6): ")) (setq endNum (getint "\nNúmero do Último Desenho a criar (ex: 8): ")) (setq prefix (getstring "\nPrefixo do Nome do Layout (ex: EST_PISO_): ")) (setq refBlock (FindDrawingOne doc legendBlkName)) (if refBlock (setq globalData (InteractiveDataInheritance refBlock legendBlkName)) (setq globalData (GetGlobalDefinitions legendBlkName))) (setq count 0) (setq i startNum) (while (<= i endNum) (setq layName (strcat prefix (FormatNum i))) (if (not (catch-apply 'vla-Item (list layouts layName))) (progn (princ (strcat "\nA criar " layName "... ")) (setvar "CMDECHO" 0) (command "_.LAYOUT" "_Copy" "TEMPLATE" layName) (command "_.LAYOUT" "_Move" layName "") (setvar "CMDECHO" 1) (setvar "CTAB" layName) (setq paperSpace (vla-get-PaperSpace doc)) (setq foundLegend (FindBlockInLayout paperSpace legendBlkName)) (if (and foundLegend (= (vla-get-HasAttributes foundLegend) :vlax-true)) (foreach att (vlax-invoke foundLegend 'GetAttributes) (setq tag (strcase (vla-get-TagString att))) (if (= tag "DES_NUM") (vla-put-TextString att (FormatNum i))) (setq val (cdr (assoc tag globalData))) (if (and val (/= val "")) (vla-put-TextString att val)))) (setq count (1+ count))) (princ (strcat "\nLayout " layName " já existe."))) (setq i (1+ i))) (vla-Regen doc acActiveViewport) (alert (strcat "Sucesso!\nGerados " (itoa count) " layouts.\nUSE A OPÇÃO 7 PARA ORDENAR.")) (princ))
+(defun Run_GenerateLayouts_FromTemplate_V26 ( / doc layouts legendBlkName startNum endNum prefix globalData layName count refBlock foundLegend paperSpace) (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) (setq layouts (vla-get-Layouts doc)) (setq legendBlkName "LEGENDA_JSJ_V1") (if (not (catch-apply 'vla-Item (list layouts "TEMPLATE"))) (progn (alert "ERRO: Layout 'TEMPLATE' não existe.") (exit))) (setq startNum (getint "\nNúmero do Primeiro Desenho a criar (ex: 6): ")) (setq endNum (getint "\nNúmero do Último Desenho a criar (ex: 8): ")) (setq prefix (getstring "\nPrefixo do Nome do Layout (ex: EST_PISO_): ")) (setq refBlock (FindDrawingOne doc legendBlkName)) (if refBlock (setq globalData (InteractiveDataInheritance refBlock legendBlkName)) (setq globalData (GetGlobalDefinitions legendBlkName))) (setq count 0) (setq i startNum) (while (<= i endNum) (setq layName (strcat prefix (FormatNum i))) (if (not (catch-apply 'vla-Item (list layouts layName))) (progn (princ (strcat "\nA criar " layName "... ")) (setvar "CMDECHO" 0) (command "_.LAYOUT" "_Copy" "TEMPLATE" layName) (command "_.LAYOUT" "_Move" layName "") (setvar "CMDECHO" 1) (setvar "CTAB" layName) (setq paperSpace (vla-get-PaperSpace doc)) (setq foundLegend (FindBlockInLayout paperSpace legendBlkName)) (if (and foundLegend (= (vla-get-HasAttributes foundLegend) :vlax-true)) (foreach att (vlax-invoke foundLegend 'GetAttributes) (setq tag (strcase (vla-get-TagString att))) (if (= tag "DES_NUM") (vla-put-TextString att (FormatNum i))) (setq val (cdr (assoc tag globalData))) (if (and val (/= val "")) (vla-put-TextString att val)))) (setq count (1+ count))) (princ (strcat "\nLayout " layName " já existe."))) (setq i (1+ i))) (vla-Regen doc acActiveViewport) (alert (strcat "Sucesso!\nGerados " (itoa count) " layouts.\n\nUse 'Gerir Layouts > Ordenar Tabs' para reordenar.")) (princ))
 (defun FindBlockInLayout (space blkName / foundObj) (setq foundObj nil) (vlax-for obj space (if (and (= (vla-get-ObjectName obj) "AcDbBlockReference") (or (= (strcase (vla-get-Name obj)) (strcase blkName)) (= (strcase (vla-get-EffectiveName obj)) (strcase blkName)))) (setq foundObj obj))) foundObj)
 (defun FindDrawingOne (doc blkName / foundBlk val) (setq foundBlk nil) (vlax-for lay (vla-get-Layouts doc) (if (and (/= (vla-get-ModelType lay) :vlax-true) (null foundBlk)) (vlax-for blk (vla-get-Block lay) (if (IsTargetBlock blk) (progn (setq val (GetAttValue blk "DES_NUM")) (if (or (= val "1") (= val "01")) (setq foundBlk blk))))))) foundBlk)
 (defun InteractiveDataInheritance (refBlock blkName / atts attList i userSel idx chosenIdxs finalData tag currentVal newVal) (textscr) (princ "\n\n=== DADOS DO DESENHO 01 ===") (setq atts (vlax-invoke refBlock 'GetAttributes)) (setq attList '()) (setq i 1) (foreach att atts (setq tag (strcase (vla-get-TagString att))) (setq val (vla-get-TextString att)) (if (not (wcmatch tag "DES_NUM,REV_*,DATA_*,DESC_*")) (progn (princ (strcat "\n " (itoa i) ". " tag ": " val)) (setq attList (cons (list i tag val) attList)) (setq i (1+ i))))) (setq attList (reverse attList)) (princ "\n-------------------------------------------") (princ "\nQuais valores copiar? (Separador: VÍRGULA)") (setq userSel (getstring T "\nDigite números (ex: 1,2) ou Enter para nenhum: ")) (setq chosenIdxs (StrSplit userSel ",")) (setq finalData '()) (princ "\n\n--- DEFINIR RESTANTES ---") (foreach item attList (setq idx (itoa (car item))) (setq tag (cadr item)) (setq currentVal (caddr item)) (if (member idx chosenIdxs) (progn (setq finalData (cons (cons tag currentVal) finalData)) (princ (strcat "\n" tag " -> Copiado."))) (progn (setq newVal (getstring T (strcat "\nValor para '" tag "' (Enter = Vazio): "))) (setq finalData (cons (cons tag newVal) finalData))))) (graphscr) finalData)
 (defun GetLayoutsRaw (doc / lays listLays name) (setq lays (vla-get-Layouts doc)) (setq listLays '()) (vlax-for item lays (setq name (strcase (vla-get-Name item))) (if (and (/= (vla-get-ModelType item) :vlax-true) (/= name "TEMPLATE")) (setq listLays (cons item listLays)))) (vl-sort listLays '(lambda (a b) (< (vla-get-TabOrder a) (vla-get-TabOrder b)))))
 ;; Função auxiliar: retorna nome do DWG sem path nem extensão
 (defun GetDWGName ( / rawName baseName) (setq rawName (getvar "DWGNAME")) (if (or (= rawName "") (= rawName nil) (wcmatch (strcase rawName) "DRAWING*.DWG")) "SEM_NOME" (vl-filename-base rawName)))
-(defun Run_GenerateCSV ( / doc path dwgName defaultName csvFile fileDes layoutList dataList sortMode sortOrder valTipo valNum valTit maxRev revLetra revData revDesc valHandle duplicates continueExport) (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) (setq path (getvar "DWGPREFIX")) (setq dwgName (GetDWGName)) (princ "\nA recolher dados (Ignorando TEMPLATE)... ") (setq dataList '()) (setq layoutList (GetLayoutsRaw doc)) (foreach lay layoutList (vlax-for blk (vla-get-Block lay) (if (IsTargetBlock blk) (progn (setq valTipo (CleanCSV (GetAttValue blk "TIPO"))) (setq valNum (CleanCSV (GetAttValue blk "DES_NUM"))) (setq valTit (CleanCSV (GetAttValue blk "TITULO"))) (setq maxRev (GetMaxRevision blk)) (setq revLetra (CleanCSV (car maxRev))) (setq revData (CleanCSV (cadr maxRev))) (setq revDesc (CleanCSV (caddr maxRev))) (setq valHandle (vla-get-Handle blk)) (setq dataList (cons (list dwgName valTipo valNum valTit revLetra revData revDesc valHandle (vla-get-Name lay)) dataList)))))) (setq duplicates (FindDuplicateDES_NUM dataList)) (setq continueExport T) (if duplicates (progn (alert (strcat "AVISO: DES_NUM DUPLICADOS!\n\n" duplicates)) (initget "Sim Nao") (if (= (getkword "\nContinuar exportação? [Sim/Nao] <Nao>: ") "Nao") (setq continueExport nil)) (if (null (getkword nil)) (setq continueExport nil)))) (if continueExport (progn (setq defaultName (strcat path dwgName "_Lista.csv")) (setq csvFile (getfiled "Guardar Lista CSV" defaultName "csv" 1)) (if csvFile (progn (initget "1 2") (setq sortMode (getkword "\nOrdenar por? [1] Tipo / [2] Número <2>: ")) (if (not sortMode) (setq sortMode "2")) (cond ((= sortMode "1") (setq dataList (vl-sort dataList '(lambda (a b) (if (= (strcase (nth 1 a)) (strcase (nth 1 b))) (< (atoi (nth 2 a)) (atoi (nth 2 b))) (< (strcase (nth 1 a)) (strcase (nth 1 b)))))))) ((= sortMode "2") (setq dataList (vl-sort dataList '(lambda (a b) (< (atoi (nth 2 a)) (atoi (nth 2 b)))))))) (setq fileDes (open csvFile "w")) (if fileDes (progn (write-line "DWG_SOURCE;TIPO;NÚMERO DE DESENHO;TITULO;REVISAO;DATA;DESCRICAO;ID_CAD" fileDes) (foreach row dataList (write-line (strcat (nth 0 row) ";" (nth 1 row) ";" (nth 2 row) ";" (nth 3 row) ";" (nth 4 row) ";" (nth 5 row) ";" (nth 6 row) ";" (nth 7 row)) fileDes)) (close fileDes) (alert (strcat "Sucesso! Ficheiro criado:\n" csvFile))) (alert "Erro: Ficheiro aberto?"))) (princ "\nCancelado."))) (princ "\nExportação cancelada.")) (princ))
+(defun Run_GenerateCSV ( / doc path dwgName defaultName csvFile fileDes layoutList dataList sortMode sortOrder valTipo valNum valTit maxRev revLetra revData revDesc valHandle duplicates continueExport userChoice) (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) (setq path (getvar "DWGPREFIX")) (setq dwgName (GetDWGName)) (princ "\nA recolher dados (Ignorando TEMPLATE)... ") (setq dataList '()) (setq layoutList (GetLayoutsRaw doc)) (foreach lay layoutList (vlax-for blk (vla-get-Block lay) (if (IsTargetBlock blk) (progn (setq valTipo (CleanCSV (GetAttValue blk "TIPO"))) (setq valNum (CleanCSV (GetAttValue blk "DES_NUM"))) (setq valTit (CleanCSV (GetAttValue blk "TITULO"))) (setq maxRev (GetMaxRevision blk)) (setq revLetra (CleanCSV (car maxRev))) (setq revData (CleanCSV (cadr maxRev))) (setq revDesc (CleanCSV (caddr maxRev))) (setq valHandle (vla-get-Handle blk)) (setq dataList (cons (list dwgName valTipo valNum valTit revLetra revData revDesc valHandle (vla-get-Name lay)) dataList)))))) (setq duplicates (FindDuplicateDES_NUM dataList)) (setq continueExport T) (if duplicates (progn (alert (strcat "AVISO: DES_NUM DUPLICADOS!\n\n" duplicates)) (initget "Sim Nao") (setq userChoice (getkword "\nContinuar exportação? [Sim/Nao] <Nao>: ")) (if (or (null userChoice) (= userChoice "Nao")) (setq continueExport nil)))) (if continueExport (progn (setq defaultName (strcat path dwgName "_Lista.csv")) (setq csvFile (getfiled "Guardar Lista CSV" defaultName "csv" 1)) (if csvFile (progn (initget "1 2") (setq sortMode (getkword "\nOrdenar por? [1] Tipo / [2] Número <2>: ")) (if (not sortMode) (setq sortMode "2")) (cond ((= sortMode "1") (setq dataList (vl-sort dataList '(lambda (a b) (if (= (strcase (nth 1 a)) (strcase (nth 1 b))) (< (atoi (nth 2 a)) (atoi (nth 2 b))) (< (strcase (nth 1 a)) (strcase (nth 1 b)))))))) ((= sortMode "2") (setq dataList (vl-sort dataList '(lambda (a b) (< (atoi (nth 2 a)) (atoi (nth 2 b)))))))) (setq fileDes (open csvFile "w")) (if fileDes (progn (write-line "DWG_SOURCE;TIPO;NÚMERO DE DESENHO;TITULO;REVISAO;DATA;DESCRICAO;ID_CAD" fileDes) (foreach row dataList (write-line (strcat (nth 0 row) ";" (nth 1 row) ";" (nth 2 row) ";" (nth 3 row) ";" (nth 4 row) ";" (nth 5 row) ";" (nth 6 row) ";" (nth 7 row)) fileDes)) (close fileDes) (alert (strcat "Sucesso! Ficheiro criado:\n" csvFile))) (alert "Erro: Ficheiro aberto?"))) (princ "\nCancelado."))) (princ "\nExportação cancelada.")) (princ))
 ;; Função auxiliar: encontra DES_NUM duplicados e retorna string formatada
 (defun FindDuplicateDES_NUM (dataList / numList duplicates item num layName seen result) (setq seen '() duplicates '()) (foreach item dataList (setq num (nth 2 item)) (setq layName (nth 8 item)) (if (assoc num seen) (setq duplicates (cons (strcat "DES_NUM " num " -> Layout: " layName) duplicates)) (setq seen (cons (cons num layName) seen)))) (if duplicates (progn (setq result "") (foreach dup (reverse duplicates) (setq result (strcat result dup "\n"))) result) nil))
 (defun Run_ImportCSV ( / doc path defaultName csvFile fileDes line parts valDwgSource valTipo valNum valTit valRev valData valDesc valHandle countUpdates) (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) (setq path (getvar "DWGPREFIX")) (setq csvFile (getfiled "Selecione o ficheiro CSV" path "csv" 4)) (if (and csvFile (findfile csvFile)) (progn (setq fileDes (open csvFile "r")) (if fileDes (progn (princ "\nA processar CSV... ") (setq countUpdates 0) (read-line fileDes) (while (setq line (read-line fileDes)) (setq parts (StrSplit line ";")) (if (>= (length parts) 8) (progn (setq valDwgSource (nth 0 parts)) (setq valTipo (nth 1 parts)) (setq valNum (nth 2 parts)) (setq valTit (nth 3 parts)) (setq valRev (nth 4 parts)) (setq valData (nth 5 parts)) (setq valDesc (nth 6 parts)) (setq valHandle (nth 7 parts)) (if (and valHandle (/= valHandle "")) (if (UpdateBlockByHandleAndData valHandle valTipo valNum valTit valRev valData valDesc) (setq countUpdates (1+ countUpdates))))))) (close fileDes) (vla-Regen doc acActiveViewport) (alert (strcat "Concluído!\n" (itoa countUpdates) " desenhos atualizados."))) (alert "Erro ao abrir ficheiro."))) (princ "\nCancelado.")) (princ))
@@ -147,11 +233,7 @@
 (defun GetMaxRevision (blk / checkRev finalRev finalDate finalDesc) (setq finalRev "-" finalDate "-" finalDesc "-") (foreach letra '("E" "D" "C" "B" "A") (if (= finalRev "-") (progn (setq checkRev (GetAttValue blk (strcat "REV_" letra))) (if (and (/= checkRev "") (/= checkRev " ")) (progn (setq finalRev checkRev) (setq finalDate (GetAttValue blk (strcat "DATA_" letra))) (setq finalDesc (GetAttValue blk (strcat "DESC_" letra)))))))) (list finalRev finalDate finalDesc))
 (defun GetGlobalDefinitions (blkName / doc blocks blkDef atts tag val dataList) (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) (setq blocks (vla-get-Blocks doc)) (setq dataList '()) (if (not (vl-catch-all-error-p (setq blkDef (vla-Item blocks blkName)))) (vlax-for obj blkDef (if (and (= (vla-get-ObjectName obj) "AcDbAttributeDefinition") (not (wcmatch (strcase (vla-get-TagString obj)) "DES_NUM,REV_*,DATA_*,DESC_*"))) (progn (setq tag (vla-get-TagString obj)) (setq val (getstring T (strcat "\nValor para '" tag "': "))) (if (/= val "") (setq dataList (cons (cons (strcase tag) val) dataList))))))) dataList)
 (defun catch-apply (func params / result) (if (vl-catch-all-error-p (setq result (vl-catch-all-apply func params))) nil result))
-(defun Run_ImportExcel_Flexible ( / ) (princ "\nUse Opcao 4 (CSV).")) (defun Run_GenerateExcel_FromTemplate ( / ) (princ "\nUse Opcao 3 (CSV).")) 
-(defun Run_MasterImport_Menu ( / loopSub optSub) (setq loopSub T) (while loopSub (textscr) (princ "\n   --- MODIFICAR LEGENDAS ---") (princ "\n   1. Importar JSON") (princ "\n   2. Definir Campos Gerais") (princ "\n   3. Alterar Desenhos") (princ "\n   4. Numerar TIPO") (princ "\n   5. Numerar SEQUENCIAL") (princ "\n   0. Voltar") (initget "1 2 3 4 5 0") (setq optSub (getkword "\n   Opção: ")) (cond ((= optSub "1") (ProcessJSONImport)) ((= optSub "2") (ProcessGlobalVariables)) ((= optSub "3") (ProcessManualReview)) ((= optSub "4") (AutoNumberByType)) ((= optSub "5") (AutoNumberSequential)) ((= optSub "0") (setq loopSub nil)) ((= optSub nil) (setq loopSub nil)))))
-(defun Run_ExportJSON ( / ) (princ "\nJSON Export."))
 (defun ProcessJSONImport ( / jsonFile fileDes line posSep handleVal attList inAttributes tag rawContent cleanContent countUpdates path) (setq path (getvar "DWGPREFIX")) (setq jsonFile (getfiled "Selecione JSON" path "json" 4)) (if (and jsonFile (findfile jsonFile)) (progn (setq fileDes (open jsonFile "r")) (setq handleVal nil attList '() inAttributes nil countUpdates 0) (princ "\nA processar JSON... ") (while (setq line (read-line fileDes)) (setq line (vl-string-trim " \t" line)) (cond ((vl-string-search "\"handle_bloco\":" line) (setq posSep (vl-string-search ":" line)) (if posSep (progn (setq rawContent (substr line (+ posSep 2))) (setq handleVal (vl-string-trim " \"," rawContent)) (setq attList '()) ))) ((vl-string-search "\"atributos\": {" line) (setq inAttributes T)) ((and inAttributes (vl-string-search "}" line)) (setq inAttributes nil) (if (and handleVal attList) (UpdateBlockByHandle handleVal attList)) (setq handleVal nil)) (inAttributes (setq posSep (vl-string-search "\": \"" line)) (if posSep (progn (setq tag (substr line 2 (- posSep 1))) (setq rawContent (substr line (+ posSep 5))) (setq cleanContent (vl-string-trim " \"," rawContent)) (setq cleanContent (StringUnescape cleanContent)) (setq attList (cons (cons (strcase tag) cleanContent) attList))))))) (close fileDes) (vla-Regen (vla-get-ActiveDocument (vlax-get-acad-object)) acActiveViewport) (alert (strcat "Concluido: " (itoa countUpdates)))) (princ "\nCancelado.")))
-(defun ProcessGlobalVariables ( / loop validTags selTag newVal continueLoop) (setq loop T validTags (GetExampleTags)) (while loop (textscr) (princ "\n\n=== GESTOR GLOBAL ===") (foreach tName validTags (princ (strcat "\n • " tName))) (setq selTag (strcase (getstring "\nDigite o NOME do Tag: "))) (if (member selTag validTags) (progn (setq newVal (getstring T (strcat "\nNovo valor: "))) (ApplyGlobalValue selTag newVal)) (princ "\nTag inválido.")) (initget "Sim Nao") (setq continueLoop (getkword "\nOutro? [Sim/Nao] <Sim>: ")) (if (= continueLoop "Nao") (setq loop nil))))
 (defun ProcessManualReview ( / loop drawList i item userIdx selectedHandle field revLet revVal) (setq loop T) (while loop (setq drawList (GetDrawingList)) (textscr) (princ "\n\n=== LISTA DE DESENHOS (ORDENADA) ===\n") (setq i 0) (foreach item drawList (princ (strcat "\n " (itoa (1+ i)) ". [Des: " (cadr item) "] (" (nth 3 item) ") - Tab: " (caddr item))) (setq i (1+ i))) (setq userIdx (getint (strcat "\nEscolha o numero (1-" (itoa i) ") ou 0: "))) (if (and userIdx (> userIdx 0) (<= userIdx i)) (progn (setq selectedHandle (car (nth (1- userIdx) drawList))) (initget "1 2 3") (setq field (getkword "\nAtualizar? [1] Tipo / [2] Titulo / [3] Revisao: ")) (cond ((= field "1") (UpdateSingleTag selectedHandle "TIPO" (getstring T "\nNovo TIPO: "))) ((= field "2") (UpdateSingleTag selectedHandle "TITULO" (getstring T "\nNovo TITULO: "))) ((= field "3") (initget "A B C D E") (setq revLet (getkword "\nQual a Revisão? [A/B/C/D/E]: ")) (if revLet (progn (UpdateSingleTag selectedHandle (strcat "DATA_" revLet) (getstring T "\nData: ")) (UpdateSingleTag selectedHandle (strcat "DESC_" revLet) (getstring T "\nDescrição: ")) (setq revVal (getstring T (strcat "\nLetra (Enter='" revLet "'): "))) (if (= revVal "") (setq revVal revLet)) (UpdateSingleTag selectedHandle (strcat "REV_" revLet) revVal)))))) (setq loop nil)) (if loop (progn (initget "Sim Nao") (if (= (getkword "\nOutro? [Sim/Nao] <Nao>: ") "Nao") (setq loop nil))))))
 (defun AutoNumberByType ( / doc dataList blk typeVal handleVal tabOrd sortedList curType count i) (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) (setq dataList '()) (princ "\n\nA analisar...") (vlax-for lay (vla-get-Layouts doc) (if (/= (vla-get-ModelType lay) :vlax-true) (vlax-for blk (vla-get-Block lay) (if (IsTargetBlock blk) (progn (setq typeVal (GetAttValue blk "TIPO")) (if (= typeVal "") (setq typeVal "INDEFINIDO")) (setq handleVal (vla-get-Handle blk)) (setq tabOrd (vla-get-TabOrder lay)) (setq dataList (cons (list typeVal tabOrd handleVal) dataList))))))) (setq sortedList (vl-sort dataList '(lambda (a b) (if (= (strcase (car a)) (strcase (car b))) (< (cadr a) (cadr b)) (< (strcase (car a)) (strcase (car b))))))) (setq curType "" count 0 i 0) (foreach item sortedList (if (/= (strcase (car item)) curType) (progn (setq curType (strcase (car item))) (setq count 1)) (setq count (1+ count))) (UpdateSingleTag (caddr item) "DES_NUM" (FormatNum count)) (setq i (1+ i))) (vla-Regen doc acActiveViewport) (alert (strcat "Concluído: " (itoa i))))
 (defun AutoNumberSequential ( / doc sortedLayouts count i) (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) (initget "Sim Nao") (if (= (getkword "\nNumerar sequencialmente? [Sim/Nao] <Nao>: ") "Sim") (progn (setq sortedLayouts (GetLayoutsRaw doc)) (setq sortedLayouts (vl-sort sortedLayouts '(lambda (a b) (< (vla-get-TabOrder a) (vla-get-TabOrder b))))) (setq count 1 i 0) (foreach lay sortedLayouts (vlax-for blk (vla-get-Block lay) (if (IsTargetBlock blk) (progn (UpdateSingleTag (vla-get-Handle blk) "DES_NUM" (FormatNum count)) (setq count (1+ count)) (setq i (1+ i)))))) (vla-Regen doc acActiveViewport) (alert (strcat "Concluído: " (itoa i))))))

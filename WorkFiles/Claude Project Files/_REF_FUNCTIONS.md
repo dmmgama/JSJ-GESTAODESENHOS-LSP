@@ -5,22 +5,36 @@
 ### Menu Principal: `c:GESTAODESENHOSJSJ`
 | Opção | Função | Descrição |
 |-------|--------|-----------|
-| 1 | `Run_MasterImport_Menu` | Submenu: JSON, Campos Gerais, Numerar |
-| 2 | `Run_GlobalVars_Selective_V29` | Alterar campo (global/seleção) |
-| 3 | `Run_GenerateCSV` | Exportar → CSV |
-| 4 | `Run_ImportCSV` | Importar ← CSV |
-| 5 | `Run_ImportExcel_Flexible` | Legacy (→ CSV) |
-| 6 | `Run_GenerateLayouts_FromTemplate_V26` | Criar layouts do TEMPLATE |
-| 7 | `Run_SortLayouts_Engine` | Ordenar tabs |
+| 1 | `Menu_ModificarLegendas` | Submenu: Alterar campos |
+| 2 | `Menu_Exportar` | Submenu: CSV, JSON |
+| 3 | `Menu_Importar` | Submenu: CSV, JSON |
+| 4 | `Menu_GerirLayouts` | Submenu: Gerar, Ordenar, Numerar |
 
-### Submenu Opção 1: `Run_MasterImport_Menu`
+### Submenu 1: Modificar Legendas
 | Sub | Função | Descrição |
 |-----|--------|-----------|
-| 1 | `ProcessJSONImport` | Importar de JSON |
-| 2 | `ProcessGlobalVariables` | Definir campos globais |
-| 3 | `ProcessManualReview` | Editar desenho individual |
-| 4 | `AutoNumberByType` | Numerar por TIPO |
-| 5 | `AutoNumberSequential` | Numerar sequencial |
+| 1 | `Run_GlobalVars_Selective_V29` | Alterar campo (global/seleção) |
+| 2 | `ProcessManualReview` | Editar desenho individual |
+
+### Submenu 2: Exportar
+| Sub | Função | Descrição |
+|-----|--------|-----------|
+| 1 | `Run_GenerateCSV` | Exportar → CSV |
+| 2 | (placeholder) | Exportar → JSON |
+
+### Submenu 3: Importar
+| Sub | Função | Descrição |
+|-----|--------|-----------|
+| 1 | `Run_ImportCSV` | Importar ← CSV |
+| 2 | `ProcessJSONImport` | Importar ← JSON |
+
+### Submenu 4: Gerir Layouts
+| Sub | Função | Descrição |
+|-----|--------|-----------|
+| 1 | `Run_GenerateLayouts_FromTemplate_V26` | Criar layouts do TEMPLATE |
+| 2 | `Run_SortLayouts_Engine` | Ordenar tabs |
+| 3 | `AutoNumberByType` | Numerar por TIPO |
+| 4 | `AutoNumberSequential` | Numerar sequencial |
 
 ### Funções Core
 | Função | Input | Output | Uso |

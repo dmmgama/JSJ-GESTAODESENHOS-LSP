@@ -14,6 +14,7 @@
 
 | ID | Tarefa | Prio | Estado |
 |----|--------|------|--------|
+| 1.0 | Reorganizar menus | Alta | ✅ |
 | 1.1 | Validar DES_NUM duplicados | Alta | ✅ |
 | 1.2 | Coluna DWG_SOURCE no CSV | Alta | ✅ |
 | 1.3 | Auto-calcular atributo R | Média | ⬜ |

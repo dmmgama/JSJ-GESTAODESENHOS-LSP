@@ -2,7 +2,7 @@
 
 **Sistema LISP para gestão de legendas de desenhos de estruturas em AutoCAD**
 
-**Versão atual: V35.1** | Fase 2 em desenvolvimento
+**Versão atual: V37.2** | Fase 2 em desenvolvimento
 
 ---
 
@@ -85,13 +85,22 @@ Comando: `GESTAODESENHOSJSJ`
 | **9** | Navegar | Pausa para ver layouts, ENTER volta ao menu |
 | **0** | Sair | Termina o programa |
 
+### Submenu 2: Exportar Lista
+| Opção | Função | Descrição |
+|-------|--------|-----------|----------|
+| **1** | CSV Default | Exporta colunas standard (DWG_SOURCE, TIPO, DES_NUM, TITULO, REVISAO_ATUAL, ID_CAD) |
+| **2** | CSV Customizado | Seleciona e reordena colunas (DES_NUM e ID_CAD sempre incluídos) |
+| **3** | JSON | Exporta estrutura completa em JSON |
+| **0** | Voltar | Regressa ao menu principal |
+
 ### Submenu 1: Modificar Legendas
 | Opção | Função | Descrição |
-|-------|--------|-----------|
+|-------|--------|-----------|----------|
 | **1** | Emitir Revisão | Nova revisão (TODOS ou seleção: 1,3,5 ou 2-5) |
 | **2** | Alterar Campo | Edita atributo global ou em seleção |
 | **3** | Alterar Desenho Individual | Edita TIPO/TITULO de um desenho |
 | **4** | Definir Utilizador | Define nome para logging |
+| **5** | Alterar Fase de Projeto | Altera fase, limpa revisões, atualiza data |
 | **9** | Navegar | Ver layouts |
 | **0** | Voltar | Regressa ao menu principal |
 
@@ -180,21 +189,34 @@ A tabela de revisões preenche-se de **baixo para cima**:
 
 ---
 
-## ✨ Funcionalidades V35
+## ✨ Funcionalidades V37
 
-### Emitir Revisão (2.1)
+### Emitir Revisão (2.1) ✅
 - Emite nova revisão em **TODOS** os desenhos ou **seleção**
 - Seleção flexível: `1,3,5` (individual) ou `2-5` (range) ou `1,3-5,8` (misto)
 - Data automática (hoje) como default
 - Validação: data da nova revisão deve ser >= anterior
 - Auto-atualiza atributo R
 
-### Modo Navegação
+### Alterar Fase de Projeto (V36) ✅
+- Altera fase do projeto em todas as legendas
+- Opção de limpar todas as revisões (volta ao início)
+- Opção de atualizar DATA para mês/ano atual
+- Útil para transição entre fases (Anteprojeto → Projeto de Execução)
+
+### CSV Configurável (V37) ✅
+- **Exportação Default:** Colunas padrão (DWG_SOURCE, TIPO, DES_NUM, TITULO, REVISAO_ATUAL, ID_CAD)
+- **Exportação Customizada:** Seleciona colunas a exportar (ex: `1,3,5` ou `2-8`)
+- **Reordenação:** Opção de alterar ordem das colunas no CSV
+- **Campos Obrigatórios:** DES_NUM e ID_CAD sempre incluídos automaticamente
+- **Campo Especial:** REVISAO_ATUAL expande-se em 3 colunas (Nº, Data, Desc)
+
+### Modo Navegação (V35) ✅
 - Opção **9** em qualquer menu permite navegar pelos layouts
 - Útil para verificar desenhos sem sair do programa
 - **ENTER** para voltar ao menu
 
-### Logging
+### Logging (V33) ✅
 - Ficheiro `.log` regista alterações em legendas
 - Utilizador configurável (default: JSJ)
 - Formato: `[TIMESTAMP] [USER] AÇÃO: Detalhes`
@@ -240,4 +262,4 @@ Projeto interno JSJ Engenharia.
 ## 📞 Contacto
 
 Desenvolvido para gestão de projetos de estruturas.
-Versão atual: **V35.1**
+Versão atual: **V37.2**

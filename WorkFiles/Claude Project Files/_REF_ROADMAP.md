@@ -3,7 +3,7 @@
 ## Estado Atual
 | Campo | Valor |
 |-------|-------|
-| **Versão** | V35.1 |
+| **Versão** | V37.2 |
 | **Fase** | 2 — Produtividade |
 | **Tarefa** | 2.2 — Verificar Escala Viewport (próxima) |
 | **Blockers** | Nenhum |
@@ -57,6 +57,7 @@
 | X.1 | Modo Navegação (opção 9) - ver layouts sem sair do menu | V35 | ✅ |
 | X.2 | Restaurar textscr para menus visíveis em caixa separada | V35 | ✅ |
 | X.3 | Remover opção Revisão de "Alterar Desenho Individual" (obsoleta) | V35.1 | ✅ |
+| X.4 | Alterar Fase de Projeto com opção de limpar revisões e data | V36 | ✅ |
 
 ### Correções de Bugs
 | ID | Descrição | Versão | Estado |
@@ -65,12 +66,22 @@
 | B.2 | Fix atributo R mostrar letra (A-E) em vez do valor do campo | V33 | ✅ |
 | B.3 | Fix validação de data em tempo real ao adicionar revisão | V33 | ✅ |
 | B.4 | Fix logging - apenas alterações em legendas, utilizador default "JSJ" | V33.1 | ✅ |
+| B.5 | Fix "no function definition" - mover funções auxiliares para início | V36.1-V36.2 | ✅ |
+| B.6 | Fix FindDuplicateDES_NUM para estrutura de dados dinâmica CSV | V37.1 | ✅ |
+| B.7 | Fix ID_CAD não exportado - forçar campos obrigatórios no CSV | V37.2 | ✅ |
 
 ### Melhorias Emitir Revisão
 | ID | Descrição | Versão | Estado |
 |----|-----------|--------|--------|
 | E.1 | Unificar TODOS e seleção (1,3,5 ou 2-5 ou 1,3-5,8) | V33.2 | ✅ |
 | E.2 | Data automática (hoje) como default | V33.2 | ✅ |
+
+### Melhorias Exportação
+| ID | Descrição | Versão | Estado |
+|----|-----------|--------|--------|
+| C.1 | CSV configurável - seleção de colunas | V37 | ✅ |
+| C.2 | CSV configurável - reordenação de colunas | V37 | ✅ |
+| C.3 | CSV configurável - campos obrigatórios (DES_NUM, ID_CAD) | V37.2 | ✅ |
 
 ---
 

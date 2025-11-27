@@ -1,6 +1,9 @@
 ;; ============================================================================
-;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V31 - FASE 1 COMPLETA)
+;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V32 - CORREÇÕES FASE 1)
 ;; ============================================================================
+
+;; Variável global para o utilizador (persiste durante sessão)
+(setq *JSJ_USER* nil)
 
 (defun c:GESTAODESENHOSJSJ ( / loop opt)
   (vl-load-com)
@@ -43,14 +46,17 @@
   (while loopSub
     (textscr)
     (princ "\n\n   --- MODIFICAR LEGENDAS ---")
+    (princ (strcat "\n   [Utilizador: " (if *JSJ_USER* *JSJ_USER* "<não definido>") "]"))
     (princ "\n   1. Alterar Campo (Global ou Seleção)")
     (princ "\n   2. Alterar Desenho Individual")
+    (princ "\n   3. Definir Utilizador")
     (princ "\n   0. Voltar")
-    (initget "1 2 0")
-    (setq optSub (getkword "\n   Opção [1/2/0]: "))
+    (initget "1 2 3 0")
+    (setq optSub (getkword "\n   Opção [1/2/3/0]: "))
     (cond
       ((= optSub "1") (Run_GlobalVars_Selective_V29))
       ((= optSub "2") (ProcessManualReview))
+      ((= optSub "3") (SetCurrentUser))
       ((= optSub "0") (setq loopSub nil))
       ((= optSub nil) (setq loopSub nil))
     )
@@ -189,6 +195,7 @@
         )
       )
       (vla-Regen doc acActiveViewport)
+      (WriteLog (strcat "GLOBAL: " selectedTag " = '" newVal "' em " (itoa count) " desenhos"))
       (alert (strcat "Concluído!\nO campo '" selectedTag "' foi atualizado em " (itoa count) " desenhos."))
     )
     (princ "\nOpção inválida.")
@@ -216,86 +223,144 @@
 ;; ============================================================================
 
 ;; ============================================================================
-;; SISTEMA DE LOGGING (1.5)
+;; SISTEMA DE LOGGING (1.5) - Automático com Utilizador
 ;; ============================================================================
-(defun WriteLog (msg / logPath logFile timestamp dateStr timeStr)
+(defun WriteLog (msg / logPath logFile timestamp dateStr timeStr userStr)
   (setq logPath (strcat (getvar "DWGPREFIX") (GetDWGName) ".log"))
   (setq dateStr (menucmd "M=$(edtime,$(getvar,date),DD-MO-YYYY)"))
   (setq timeStr (menucmd "M=$(edtime,$(getvar,date),HH:MM:SS)"))
   (setq timestamp (strcat dateStr " " timeStr))
+  (setq userStr (if *JSJ_USER* *JSJ_USER* "SISTEMA"))
   (setq logFile (open logPath "a"))
   (if logFile
     (progn
-      (write-line (strcat "[" timestamp "] " msg) logFile)
+      (write-line (strcat "[" timestamp "] [" userStr "] " msg) logFile)
       (close logFile)
     )
   )
 )
 
+;; Função para definir utilizador
+(defun SetCurrentUser ( / newUser)
+  (setq newUser (getstring T (strcat "\nUtilizador atual: " (if *JSJ_USER* *JSJ_USER* "<vazio>") "\nNovo utilizador: ")))
+  (if (and newUser (/= newUser ""))
+    (progn
+      (setq *JSJ_USER* newUser)
+      (WriteLog (strcat "UTILIZADOR: Sessão iniciada por " newUser))
+      (princ (strcat "\nUtilizador definido: " newUser)))
+    (princ "\nUtilizador não alterado.")
+  )
+)
+
 ;; ============================================================================
-;; AUTO-CALCULAR ATRIBUTO R (1.3)
+;; AUTO-CALCULAR ATRIBUTO R (1.3) - Corrigido para detectar letra da revisão
 ;; ============================================================================
-(defun UpdateAttributeR (handle / ename obj atts maxRev revLetra)
+(defun UpdateAttributeR (handle / ename obj maxRevLetter)
   (if (not (vl-catch-all-error-p (vl-catch-all-apply 'handent (list handle))))
     (setq ename (handent handle)))
   (if (and ename (setq obj (vlax-ename->vla-object ename)))
     (if (IsTargetBlock obj)
       (progn
-        (setq maxRev (GetMaxRevision obj))
-        (setq revLetra (car maxRev))
-        (if (and revLetra (/= revLetra "-") (/= revLetra ""))
-          (UpdateSingleTag handle "R" revLetra)
+        ;; Determina qual a letra da última revisão preenchida (E→D→C→B→A)
+        (setq maxRevLetter (GetMaxRevisionLetter obj))
+        (if maxRevLetter
+          (UpdateSingleTag handle "R" maxRevLetter)
         )
       )
     )
   )
 )
 
-;; ============================================================================
-;; VALIDAR DATAS REVISÕES (1.4)
-;; ============================================================================
-(defun ValidateRevisionDates (blk / dataA dataB dataC dataD dataE errors parseDate isAfter)
-  ;; Função interna para converter data DD-MM-YYYY para número comparável
-  (defun parseDate (dateStr / parts d m y)
-    (if (and dateStr (/= dateStr "") (/= dateStr "-"))
+;; Função auxiliar: retorna a LETRA da última revisão preenchida (não o valor do atributo)
+(defun GetMaxRevisionLetter (blk / checkRev foundLetter)
+  (setq foundLetter nil)
+  (foreach letra '("E" "D" "C" "B" "A")
+    (if (null foundLetter)
       (progn
-        (setq parts (StrSplit dateStr "-"))
-        (if (>= (length parts) 3)
-          (progn
-            (setq d (atoi (nth 0 parts)))
-            (setq m (atoi (nth 1 parts)))
-            (setq y (atoi (nth 2 parts)))
-            (+ (* y 10000) (* m 100) d)
-          )
-          0
+        (setq checkRev (GetAttValue blk (strcat "REV_" letra)))
+        (if (and checkRev (/= checkRev "") (/= checkRev " "))
+          (setq foundLetter letra)
         )
       )
-      0
     )
   )
-  
-  ;; Função interna para verificar se data2 > data1
-  (defun isAfter (date1 date2)
-    (and (> date1 0) (> date2 0) (< date2 date1))
+  foundLetter
+)
+
+;; ============================================================================
+;; VALIDAR DATAS REVISÕES (1.4) - Validação em tempo real
+;; ============================================================================
+
+;; Função para converter data DD-MM-YYYY para número comparável
+(defun ParseDateToNum (dateStr / parts d m y)
+  (if (and dateStr (/= dateStr "") (/= dateStr "-") (/= dateStr " "))
+    (progn
+      (setq parts (StrSplit dateStr "-"))
+      (if (>= (length parts) 3)
+        (progn
+          (setq d (atoi (nth 0 parts)))
+          (setq m (atoi (nth 1 parts)))
+          (setq y (atoi (nth 2 parts)))
+          (+ (* y 10000) (* m 100) d)
+        )
+        0
+      )
+    )
+    0
   )
-  
+)
+
+;; Valida se nova data é posterior à revisão anterior (para uso em tempo real)
+(defun ValidateNewRevisionDate (handle newRevLetter newDateStr / ename obj prevLetter prevDateStr prevDateNum newDateNum)
+  (if (not (vl-catch-all-error-p (vl-catch-all-apply 'handent (list handle))))
+    (setq ename (handent handle)))
+  (if (and ename (setq obj (vlax-ename->vla-object ename)))
+    (progn
+      ;; Determina a revisão anterior
+      (setq prevLetter (cond
+        ((= newRevLetter "B") "A")
+        ((= newRevLetter "C") "B")
+        ((= newRevLetter "D") "C")
+        ((= newRevLetter "E") "D")
+        (T nil)
+      ))
+      (if prevLetter
+        (progn
+          (setq prevDateStr (GetAttValue obj (strcat "DATA_" prevLetter)))
+          (setq prevDateNum (ParseDateToNum prevDateStr))
+          (setq newDateNum (ParseDateToNum newDateStr))
+          ;; Se ambas as datas existem e a nova é anterior, retorna aviso
+          (if (and (> prevDateNum 0) (> newDateNum 0) (< newDateNum prevDateNum))
+            (strcat "AVISO: Data " newDateStr " é anterior a REV_" prevLetter " (" prevDateStr ")")
+            nil
+          )
+        )
+        nil
+      )
+    )
+    nil
+  )
+)
+
+;; Validação completa para exportação CSV
+(defun ValidateRevisionDates (blk / dataA dataB dataC dataD dataE errors)
   (setq errors "")
-  (setq dataA (parseDate (GetAttValue blk "DATA_A")))
-  (setq dataB (parseDate (GetAttValue blk "DATA_B")))
-  (setq dataC (parseDate (GetAttValue blk "DATA_C")))
-  (setq dataD (parseDate (GetAttValue blk "DATA_D")))
-  (setq dataE (parseDate (GetAttValue blk "DATA_E")))
+  (setq dataA (ParseDateToNum (GetAttValue blk "DATA_A")))
+  (setq dataB (ParseDateToNum (GetAttValue blk "DATA_B")))
+  (setq dataC (ParseDateToNum (GetAttValue blk "DATA_C")))
+  (setq dataD (ParseDateToNum (GetAttValue blk "DATA_D")))
+  (setq dataE (ParseDateToNum (GetAttValue blk "DATA_E")))
   
-  (if (isAfter dataB dataA)
+  (if (and (> dataA 0) (> dataB 0) (< dataB dataA))
     (setq errors (strcat errors "DATA_B < DATA_A; "))
   )
-  (if (isAfter dataC dataB)
+  (if (and (> dataB 0) (> dataC 0) (< dataC dataB))
     (setq errors (strcat errors "DATA_C < DATA_B; "))
   )
-  (if (isAfter dataD dataC)
+  (if (and (> dataC 0) (> dataD 0) (< dataD dataC))
     (setq errors (strcat errors "DATA_D < DATA_C; "))
   )
-  (if (isAfter dataE dataD)
+  (if (and (> dataD 0) (> dataE 0) (< dataE dataD))
     (setq errors (strcat errors "DATA_E < DATA_D; "))
   )
   
@@ -321,7 +386,7 @@
 (defun GetGlobalDefinitions (blkName / doc blocks blkDef atts tag val dataList) (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) (setq blocks (vla-get-Blocks doc)) (setq dataList '()) (if (not (vl-catch-all-error-p (setq blkDef (vla-Item blocks blkName)))) (vlax-for obj blkDef (if (and (= (vla-get-ObjectName obj) "AcDbAttributeDefinition") (not (wcmatch (strcase (vla-get-TagString obj)) "DES_NUM,REV_*,DATA_*,DESC_*"))) (progn (setq tag (vla-get-TagString obj)) (setq val (getstring T (strcat "\nValor para '" tag "': "))) (if (/= val "") (setq dataList (cons (cons (strcase tag) val) dataList))))))) dataList)
 (defun catch-apply (func params / result) (if (vl-catch-all-error-p (setq result (vl-catch-all-apply func params))) nil result))
 (defun ProcessJSONImport ( / jsonFile fileDes line posSep handleVal attList inAttributes tag rawContent cleanContent countUpdates path) (setq path (getvar "DWGPREFIX")) (setq jsonFile (getfiled "Selecione JSON" path "json" 4)) (if (and jsonFile (findfile jsonFile)) (progn (setq fileDes (open jsonFile "r")) (setq handleVal nil attList '() inAttributes nil countUpdates 0) (princ "\nA processar JSON... ") (while (setq line (read-line fileDes)) (setq line (vl-string-trim " \t" line)) (cond ((vl-string-search "\"handle_bloco\":" line) (setq posSep (vl-string-search ":" line)) (if posSep (progn (setq rawContent (substr line (+ posSep 2))) (setq handleVal (vl-string-trim " \"," rawContent)) (setq attList '()) ))) ((vl-string-search "\"atributos\": {" line) (setq inAttributes T)) ((and inAttributes (vl-string-search "}" line)) (setq inAttributes nil) (if (and handleVal attList) (UpdateBlockByHandle handleVal attList)) (setq handleVal nil)) (inAttributes (setq posSep (vl-string-search "\": \"" line)) (if posSep (progn (setq tag (substr line 2 (- posSep 1))) (setq rawContent (substr line (+ posSep 5))) (setq cleanContent (vl-string-trim " \"," rawContent)) (setq cleanContent (StringUnescape cleanContent)) (setq attList (cons (cons (strcase tag) cleanContent) attList))))))) (close fileDes) (vla-Regen (vla-get-ActiveDocument (vlax-get-acad-object)) acActiveViewport) (alert (strcat "Concluido: " (itoa countUpdates)))) (princ "\nCancelado.")))
-(defun ProcessManualReview ( / loop drawList i item userIdx selectedHandle field revLet revVal) (WriteLog "MODIFICAR MANUAL: Iniciado") (setq loop T) (while loop (setq drawList (GetDrawingList)) (textscr) (princ "\n\n=== LISTA DE DESENHOS (ORDENADA) ===\n") (setq i 0) (foreach item drawList (princ (strcat "\n " (itoa (1+ i)) ". [Des: " (cadr item) "] (" (nth 3 item) ") - Tab: " (caddr item))) (setq i (1+ i))) (setq userIdx (getint (strcat "\nEscolha o numero (1-" (itoa i) ") ou 0: "))) (if (and userIdx (> userIdx 0) (<= userIdx i)) (progn (setq selectedHandle (car (nth (1- userIdx) drawList))) (initget "1 2 3") (setq field (getkword "\nAtualizar? [1] Tipo / [2] Titulo / [3] Revisao: ")) (cond ((= field "1") (UpdateSingleTag selectedHandle "TIPO" (getstring T "\nNovo TIPO: ")) (WriteLog (strcat "MODIFICAR: Des " (cadr (nth (1- userIdx) drawList)) " - TIPO alterado"))) ((= field "2") (UpdateSingleTag selectedHandle "TITULO" (getstring T "\nNovo TITULO: ")) (WriteLog (strcat "MODIFICAR: Des " (cadr (nth (1- userIdx) drawList)) " - TITULO alterado"))) ((= field "3") (initget "A B C D E") (setq revLet (getkword "\nQual a Revisão? [A/B/C/D/E]: ")) (if revLet (progn (UpdateSingleTag selectedHandle (strcat "DATA_" revLet) (getstring T "\nData: ")) (UpdateSingleTag selectedHandle (strcat "DESC_" revLet) (getstring T "\nDescrição: ")) (setq revVal (getstring T (strcat "\nLetra (Enter='" revLet "'): "))) (if (= revVal "") (setq revVal revLet)) (UpdateSingleTag selectedHandle (strcat "REV_" revLet) revVal) (UpdateAttributeR selectedHandle) (WriteLog (strcat "MODIFICAR: Des " (cadr (nth (1- userIdx) drawList)) " - REV_" revLet " alterado")))))) (setq loop nil)) (if loop (progn (initget "Sim Nao") (if (= (getkword "\nOutro? [Sim/Nao] <Nao>: ") "Nao") (setq loop nil))))))
+(defun ProcessManualReview ( / loop drawList i item userIdx selectedHandle field revLet revData revDesc dateWarning desNum doc) (WriteLog "MODIFICAR MANUAL: Iniciado") (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) (setq loop T) (while loop (setq drawList (GetDrawingList)) (textscr) (princ "\n\n=== LISTA DE DESENHOS (ORDENADA) ===\n") (setq i 0) (foreach item drawList (princ (strcat "\n " (itoa (1+ i)) ". [Des: " (cadr item) "] (" (nth 3 item) ") - Tab: " (caddr item))) (setq i (1+ i))) (setq userIdx (getint (strcat "\nEscolha o numero (1-" (itoa i) ") ou 0: "))) (if (and userIdx (> userIdx 0) (<= userIdx i)) (progn (setq selectedHandle (car (nth (1- userIdx) drawList))) (setq desNum (cadr (nth (1- userIdx) drawList))) (initget "1 2 3") (setq field (getkword "\nAtualizar? [1] Tipo / [2] Titulo / [3] Revisao: ")) (cond ((= field "1") (UpdateSingleTag selectedHandle "TIPO" (getstring T "\nNovo TIPO: ")) (WriteLog (strcat "MODIFICAR: Des " desNum " - TIPO alterado"))) ((= field "2") (UpdateSingleTag selectedHandle "TITULO" (getstring T "\nNovo TITULO: ")) (WriteLog (strcat "MODIFICAR: Des " desNum " - TITULO alterado"))) ((= field "3") (initget "A B C D E") (setq revLet (getkword "\nQual a Revisão? [A/B/C/D/E]: ")) (if revLet (progn (setq revData (getstring T "\nData (DD-MM-YYYY): ")) (setq dateWarning (ValidateNewRevisionDate selectedHandle revLet revData)) (if dateWarning (progn (princ (strcat "\n*** " dateWarning " ***")) (initget "Sim Nao") (if (= (getkword "\nContinuar mesmo assim? [Sim/Nao] <Nao>: ") "Nao") (setq revLet nil)))) (if revLet (progn (setq revDesc (getstring T "\nDescrição: ")) (UpdateSingleTag selectedHandle (strcat "DATA_" revLet) revData) (UpdateSingleTag selectedHandle (strcat "DESC_" revLet) revDesc) (UpdateSingleTag selectedHandle (strcat "REV_" revLet) revLet) (UpdateAttributeR selectedHandle) (vla-Regen doc acActiveViewport) (WriteLog (strcat "MODIFICAR: Des " desNum " - REV_" revLet " (" revData ") " revDesc)))))))) (setq loop nil)) (if loop (progn (initget "Sim Nao") (if (= (getkword "\nOutro? [Sim/Nao] <Nao>: ") "Nao") (setq loop nil))))))
 (defun AutoNumberByType ( / doc dataList blk typeVal handleVal tabOrd sortedList curType count i) (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) (setq dataList '()) (princ "\n\nA analisar...") (vlax-for lay (vla-get-Layouts doc) (if (/= (vla-get-ModelType lay) :vlax-true) (vlax-for blk (vla-get-Block lay) (if (IsTargetBlock blk) (progn (setq typeVal (GetAttValue blk "TIPO")) (if (= typeVal "") (setq typeVal "INDEFINIDO")) (setq handleVal (vla-get-Handle blk)) (setq tabOrd (vla-get-TabOrder lay)) (setq dataList (cons (list typeVal tabOrd handleVal) dataList))))))) (setq sortedList (vl-sort dataList '(lambda (a b) (if (= (strcase (car a)) (strcase (car b))) (< (cadr a) (cadr b)) (< (strcase (car a)) (strcase (car b))))))) (setq curType "" count 0 i 0) (foreach item sortedList (if (/= (strcase (car item)) curType) (progn (setq curType (strcase (car item))) (setq count 1)) (setq count (1+ count))) (UpdateSingleTag (caddr item) "DES_NUM" (FormatNum count)) (setq i (1+ i))) (vla-Regen doc acActiveViewport) (alert (strcat "Concluído: " (itoa i))))
 (defun AutoNumberSequential ( / doc sortedLayouts count i) (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) (initget "Sim Nao") (if (= (getkword "\nNumerar sequencialmente? [Sim/Nao] <Nao>: ") "Sim") (progn (setq sortedLayouts (GetLayoutsRaw doc)) (setq sortedLayouts (vl-sort sortedLayouts '(lambda (a b) (< (vla-get-TabOrder a) (vla-get-TabOrder b))))) (setq count 1 i 0) (foreach lay sortedLayouts (vlax-for blk (vla-get-Block lay) (if (IsTargetBlock blk) (progn (UpdateSingleTag (vla-get-Handle blk) "DES_NUM" (FormatNum count)) (setq count (1+ count)) (setq i (1+ i)))))) (vla-Regen doc acActiveViewport) (alert (strcat "Concluído: " (itoa i))))))
 (defun ReleaseObject (obj) (if (and obj (not (vlax-object-released-p obj))) (vlax-release-object obj)))

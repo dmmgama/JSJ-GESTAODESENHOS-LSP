@@ -1,5 +1,5 @@
 ;; ============================================================================
-;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V33 - EMITIR REVISAO)
+;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V33.3 - NAVEGACAO LAYOUTS)
 ;; ============================================================================
 
 ;; Variável global para o utilizador (persiste durante sessão)
@@ -10,7 +10,6 @@
   (setq loop T)
 
   (while loop
-    (textscr)
     (princ "\n\n==============================================")
     (princ "\n          GESTAO DESENHOS JSJ - MENU          ")
     (princ "\n==============================================")
@@ -18,17 +17,20 @@
     (princ "\n 2. Exportar Lista de Desenhos")
     (princ "\n 3. Importar Lista de Desenhos")
     (princ "\n 4. Gerir Layouts")
+    (princ "\n----------------------------------------------")
+    (princ "\n N. Navegar (ver desenho)")
     (princ "\n 0. Sair")
     (princ "\n==============================================")
 
-    (initget "1 2 3 4 0")
-    (setq opt (getkword "\nEscolha uma opção [1/2/3/4/0]: "))
+    (initget "1 2 3 4 N 0")
+    (setq opt (getkword "\nEscolha uma opção [1/2/3/4/N/0]: "))
 
     (cond
       ((= opt "1") (Menu_ModificarLegendas))
       ((= opt "2") (Menu_Exportar))
       ((= opt "3") (Menu_Importar))
       ((= opt "4") (Menu_GerirLayouts))
+      ((= opt "N") (ModoNavegacao))
       ((= opt "0") (setq loop nil))
       ((= opt nil) (setq loop nil)) 
     )
@@ -39,26 +41,39 @@
 )
 
 ;; ============================================================================
+;; MODO NAVEGACAO - Permite ver/alterar layouts e voltar ao menu
+;; ============================================================================
+(defun ModoNavegacao ( / )
+  (graphscr)
+  (princ "\n*** MODO NAVEGACAO ***")
+  (princ "\nPode agora navegar pelos layouts e verificar os desenhos.")
+  (princ "\nQuando terminar, prima ENTER para voltar ao menu.")
+  (getstring "\n[ENTER para voltar ao menu]: ")
+  (princ)
+)
+
+;; ============================================================================
 ;; SUBMENU 1: MODIFICAR LEGENDAS
 ;; ============================================================================
 (defun Menu_ModificarLegendas ( / loopSub optSub)
   (setq loopSub T)
   (while loopSub
-    (textscr)
     (princ "\n\n   --- MODIFICAR LEGENDAS ---")
-    (princ (strcat "\n   [Utilizador: " (if *JSJ_USER* *JSJ_USER* "<nao definido>") "]"))
+    (princ (strcat "\n   [Utilizador: " (if *JSJ_USER* *JSJ_USER* "JSJ") "]"))
     (princ "\n   1. Emitir Revisao")
     (princ "\n   2. Alterar Campo (Global ou Selecao)")
     (princ "\n   3. Alterar Desenho Individual")
     (princ "\n   4. Definir Utilizador")
+    (princ "\n   N. Navegar (ver desenho)")
     (princ "\n   0. Voltar")
-    (initget "1 2 3 4 0")
-    (setq optSub (getkword "\n   Opcao [1/2/3/4/0]: "))
+    (initget "1 2 3 4 N 0")
+    (setq optSub (getkword "\n   Opcao [1/2/3/4/N/0]: "))
     (cond
       ((= optSub "1") (Menu_EmitirRevisao))
       ((= optSub "2") (Run_GlobalVars_Selective_V29))
       ((= optSub "3") (ProcessManualReview))
       ((= optSub "4") (SetCurrentUser))
+      ((= optSub "N") (ModoNavegacao))
       ((= optSub "0") (setq loopSub nil))
       ((= optSub nil) (setq loopSub nil))
     )
@@ -78,13 +93,12 @@
 (defun Menu_Exportar ( / loopSub optSub)
   (setq loopSub T)
   (while loopSub
-    (textscr)
     (princ "\n\n   --- EXPORTAR LISTA DE DESENHOS ---")
     (princ "\n   1. Gerar CSV")
     (princ "\n   2. Exportar JSON")
     (princ "\n   0. Voltar")
     (initget "1 2 0")
-    (setq optSub (getkword "\n   Opção [1/2/0]: "))
+    (setq optSub (getkword "\n   Opcao [1/2/0]: "))
     (cond
       ((= optSub "1") (Run_GenerateCSV))
       ((= optSub "2") (princ "\nEm desenvolvimento."))
@@ -100,13 +114,12 @@
 (defun Menu_Importar ( / loopSub optSub)
   (setq loopSub T)
   (while loopSub
-    (textscr)
     (princ "\n\n   --- IMPORTAR LISTA DE DESENHOS ---")
     (princ "\n   1. Importar CSV")
     (princ "\n   2. Importar JSON")
     (princ "\n   0. Voltar")
     (initget "1 2 0")
-    (setq optSub (getkword "\n   Opção [1/2/0]: "))
+    (setq optSub (getkword "\n   Opcao [1/2/0]: "))
     (cond
       ((= optSub "1") (Run_ImportCSV))
       ((= optSub "2") (ProcessJSONImport))
@@ -122,7 +135,6 @@
 (defun Menu_GerirLayouts ( / loopSub optSub)
   (setq loopSub T)
   (while loopSub
-    (textscr)
     (princ "\n\n   --- GERIR LAYOUTS ---")
     (princ "\n   1. Gerar Novos (TEMPLATE)")
     (princ "\n   2. Ordenar Tabs")
@@ -130,7 +142,7 @@
     (princ "\n   4. Numerar SEQUENCIAL")
     (princ "\n   0. Voltar")
     (initget "1 2 3 4 0")
-    (setq optSub (getkword "\n   Opção [1/2/3/4/0]: "))
+    (setq optSub (getkword "\n   Opcao [1/2/3/4/0]: "))
     (cond
       ((= optSub "1") (Run_GenerateLayouts_FromTemplate_V26))
       ((= optSub "2") (Run_SortLayouts_Engine))
@@ -149,7 +161,6 @@
   (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
   (setq validTags (GetExampleTags)) 
   
-  (textscr)
   (princ "\n\n=== ESCOLHA O CAMPO A ALTERAR ===")
   (setq i 1)
   (setq attList '())
@@ -323,7 +334,6 @@
       (princ "\nNenhum desenho encontrado.")
     )
     (progn
-      (textscr)
       (princ "\n\n=== EMITIR REVISAO ===")
       (princ (strcat "\nTotal de desenhos: " (itoa (length drawList))))
       
@@ -555,7 +565,7 @@
 (defun Run_GenerateLayouts_FromTemplate_V26 ( / doc layouts legendBlkName startNum endNum prefix globalData layName count refBlock foundLegend paperSpace) (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) (setq layouts (vla-get-Layouts doc)) (setq legendBlkName "LEGENDA_JSJ_V1") (if (not (catch-apply 'vla-Item (list layouts "TEMPLATE"))) (progn (alert "ERRO: Layout 'TEMPLATE' não existe.") (exit))) (setq startNum (getint "\nNúmero do Primeiro Desenho a criar (ex: 6): ")) (setq endNum (getint "\nNúmero do Último Desenho a criar (ex: 8): ")) (setq prefix (getstring "\nPrefixo do Nome do Layout (ex: EST_PISO_): ")) (setq refBlock (FindDrawingOne doc legendBlkName)) (if refBlock (setq globalData (InteractiveDataInheritance refBlock legendBlkName)) (setq globalData (GetGlobalDefinitions legendBlkName))) (setq count 0) (setq i startNum) (while (<= i endNum) (setq layName (strcat prefix (FormatNum i))) (if (not (catch-apply 'vla-Item (list layouts layName))) (progn (princ (strcat "\nA criar " layName "... ")) (setvar "CMDECHO" 0) (command "_.LAYOUT" "_Copy" "TEMPLATE" layName) (command "_.LAYOUT" "_Move" layName "") (setvar "CMDECHO" 1) (setvar "CTAB" layName) (setq paperSpace (vla-get-PaperSpace doc)) (setq foundLegend (FindBlockInLayout paperSpace legendBlkName)) (if (and foundLegend (= (vla-get-HasAttributes foundLegend) :vlax-true)) (foreach att (vlax-invoke foundLegend 'GetAttributes) (setq tag (strcase (vla-get-TagString att))) (if (= tag "DES_NUM") (vla-put-TextString att (FormatNum i))) (setq val (cdr (assoc tag globalData))) (if (and val (/= val "")) (vla-put-TextString att val)))) (setq count (1+ count))) (princ (strcat "\nLayout " layName " já existe."))) (setq i (1+ i))) (vla-Regen doc acActiveViewport) (alert (strcat "Sucesso!\nGerados " (itoa count) " layouts.\n\nUse 'Gerir Layouts > Ordenar Tabs' para reordenar.")) (princ))
 (defun FindBlockInLayout (space blkName / foundObj) (setq foundObj nil) (vlax-for obj space (if (and (= (vla-get-ObjectName obj) "AcDbBlockReference") (or (= (strcase (vla-get-Name obj)) (strcase blkName)) (= (strcase (vla-get-EffectiveName obj)) (strcase blkName)))) (setq foundObj obj))) foundObj)
 (defun FindDrawingOne (doc blkName / foundBlk val) (setq foundBlk nil) (vlax-for lay (vla-get-Layouts doc) (if (and (/= (vla-get-ModelType lay) :vlax-true) (null foundBlk)) (vlax-for blk (vla-get-Block lay) (if (IsTargetBlock blk) (progn (setq val (GetAttValue blk "DES_NUM")) (if (or (= val "1") (= val "01")) (setq foundBlk blk))))))) foundBlk)
-(defun InteractiveDataInheritance (refBlock blkName / atts attList i userSel idx chosenIdxs finalData tag currentVal newVal) (textscr) (princ "\n\n=== DADOS DO DESENHO 01 ===") (setq atts (vlax-invoke refBlock 'GetAttributes)) (setq attList '()) (setq i 1) (foreach att atts (setq tag (strcase (vla-get-TagString att))) (setq val (vla-get-TextString att)) (if (not (wcmatch tag "DES_NUM,REV_*,DATA_*,DESC_*")) (progn (princ (strcat "\n " (itoa i) ". " tag ": " val)) (setq attList (cons (list i tag val) attList)) (setq i (1+ i))))) (setq attList (reverse attList)) (princ "\n-------------------------------------------") (princ "\nQuais valores copiar? (Separador: VÍRGULA)") (setq userSel (getstring T "\nDigite números (ex: 1,2) ou Enter para nenhum: ")) (setq chosenIdxs (StrSplit userSel ",")) (setq finalData '()) (princ "\n\n--- DEFINIR RESTANTES ---") (foreach item attList (setq idx (itoa (car item))) (setq tag (cadr item)) (setq currentVal (caddr item)) (if (member idx chosenIdxs) (progn (setq finalData (cons (cons tag currentVal) finalData)) (princ (strcat "\n" tag " -> Copiado."))) (progn (setq newVal (getstring T (strcat "\nValor para '" tag "' (Enter = Vazio): "))) (setq finalData (cons (cons tag newVal) finalData))))) (graphscr) finalData)
+(defun InteractiveDataInheritance (refBlock blkName / atts attList i userSel idx chosenIdxs finalData tag currentVal newVal) (princ "\n\n=== DADOS DO DESENHO 01 ===") (setq atts (vlax-invoke refBlock 'GetAttributes)) (setq attList '()) (setq i 1) (foreach att atts (setq tag (strcase (vla-get-TagString att))) (setq val (vla-get-TextString att)) (if (not (wcmatch tag "DES_NUM,REV_*,DATA_*,DESC_*")) (progn (princ (strcat "\n " (itoa i) ". " tag ": " val)) (setq attList (cons (list i tag val) attList)) (setq i (1+ i))))) (setq attList (reverse attList)) (princ "\n-------------------------------------------") (princ "\nQuais valores copiar? (Separador: VÍRGULA)") (setq userSel (getstring T "\nDigite números (ex: 1,2) ou Enter para nenhum: ")) (setq chosenIdxs (StrSplit userSel ",")) (setq finalData '()) (princ "\n\n--- DEFINIR RESTANTES ---") (foreach item attList (setq idx (itoa (car item))) (setq tag (cadr item)) (setq currentVal (caddr item)) (if (member idx chosenIdxs) (progn (setq finalData (cons (cons tag currentVal) finalData)) (princ (strcat "\n" tag " -> Copiado."))) (progn (setq newVal (getstring T (strcat "\nValor para '" tag "' (Enter = Vazio): "))) (setq finalData (cons (cons tag newVal) finalData))))) (graphscr) finalData)
 (defun GetLayoutsRaw (doc / lays listLays name) (setq lays (vla-get-Layouts doc)) (setq listLays '()) (vlax-for item lays (setq name (strcase (vla-get-Name item))) (if (and (/= (vla-get-ModelType item) :vlax-true) (/= name "TEMPLATE")) (setq listLays (cons item listLays)))) (vl-sort listLays '(lambda (a b) (< (vla-get-TabOrder a) (vla-get-TabOrder b)))))
 ;; Função auxiliar: retorna nome do DWG sem path nem extensão
 (defun GetDWGName ( / rawName baseName) (setq rawName (getvar "DWGNAME")) (if (or (= rawName "") (= rawName nil) (wcmatch (strcase rawName) "DRAWING*.DWG")) "SEM_NOME" (vl-filename-base rawName)))
@@ -582,7 +592,6 @@
       (setq loop T)
       (while loop
         (setq drawList (GetDrawingList))
-        (textscr)
         (princ "\n\n=== LISTA DE DESENHOS (ORDENADA) ===\n")
         (setq i 0)
         (foreach item drawList

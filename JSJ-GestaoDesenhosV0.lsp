@@ -1,5 +1,5 @@
 ;; ============================================================================
-;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V36.2 - FIX TODAS FUNCOES)
+;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V37 - CSV CONFIGURAVEL)
 ;; ============================================================================
 
 ;; Variável global para o utilizador (persiste durante sessão)
@@ -91,6 +91,116 @@
   (if (or (= rawName "") (= rawName nil) (wcmatch (strcase rawName) "DRAWING*.DWG")) 
     "SEM_NOME" 
     (vl-filename-base rawName))
+)
+
+(defun CleanCSV (str) 
+  (if (= str nil) (setq str "")) 
+  (setq str (vl-string-translate ";" "," str)) 
+  (vl-string-trim " \"" str)
+)
+
+(defun GetLayoutsRaw (doc / lays listLays name) 
+  (setq lays (vla-get-Layouts doc)) 
+  (setq listLays '()) 
+  (vlax-for item lays 
+    (setq name (strcase (vla-get-Name item))) 
+    (if (and (/= (vla-get-ModelType item) :vlax-true) 
+             (/= name "TEMPLATE")) 
+      (setq listLays (cons item listLays)))) 
+  (vl-sort listLays '(lambda (a b) (< (vla-get-TabOrder a) (vla-get-TabOrder b))))
+)
+
+(defun GetMaxRevision (blk / checkRev finalRev finalDate finalDesc) 
+  (setq finalRev "-" finalDate "-" finalDesc "-") 
+  (foreach letra '("E" "D" "C" "B" "A") 
+    (if (= finalRev "-") 
+      (progn 
+        (setq checkRev (GetAttValue blk (strcat "REV_" letra))) 
+        (if (and (/= checkRev "") (/= checkRev " ")) 
+          (progn 
+            (setq finalRev checkRev) 
+            (setq finalDate (GetAttValue blk (strcat "DATA_" letra))) 
+            (setq finalDesc (GetAttValue blk (strcat "DESC_" letra)))))))) 
+  (list finalRev finalDate finalDesc)
+)
+
+(defun ParseDateToNum (dateStr / parts d m y)
+  (if (and dateStr (/= dateStr "") (/= dateStr "-") (/= dateStr " "))
+    (progn
+      (setq parts (StrSplit dateStr "-"))
+      (if (>= (length parts) 3)
+        (progn
+          (setq d (atoi (nth 0 parts)))
+          (setq m (atoi (nth 1 parts)))
+          (setq y (atoi (nth 2 parts)))
+          (+ (* y 10000) (* m 100) d)
+        )
+        0
+      )
+    )
+    0
+  )
+)
+
+(defun ValidateRevisionDates (blk / dataA dataB dataC dataD dataE errors)
+  (setq errors "")
+  (setq dataA (ParseDateToNum (GetAttValue blk "DATA_A")))
+  (setq dataB (ParseDateToNum (GetAttValue blk "DATA_B")))
+  (setq dataC (ParseDateToNum (GetAttValue blk "DATA_C")))
+  (setq dataD (ParseDateToNum (GetAttValue blk "DATA_D")))
+  (setq dataE (ParseDateToNum (GetAttValue blk "DATA_E")))
+  
+  (if (and (> dataA 0) (> dataB 0) (< dataB dataA))
+    (setq errors (strcat errors "DATA_B < DATA_A; "))
+  )
+  (if (and (> dataB 0) (> dataC 0) (< dataC dataB))
+    (setq errors (strcat errors "DATA_C < DATA_B; "))
+  )
+  (if (and (> dataC 0) (> dataD 0) (< dataD dataC))
+    (setq errors (strcat errors "DATA_D < DATA_C; "))
+  )
+  (if (and (> dataD 0) (> dataE 0) (< dataE dataD))
+    (setq errors (strcat errors "DATA_E < DATA_D; "))
+  )
+  
+  (if (= errors "") nil errors)
+)
+
+(defun FindDuplicateDES_NUM (dataList / numList duplicates item num seen result idx)
+  (setq seen '() duplicates '())
+  
+  ;; Encontrar indice de DES_NUM (assumir que está presente)
+  (setq idx nil)
+  (setq i 0)
+  (while (and (< i (length (car dataList))) (null idx))
+    (if (= (nth i (car dataList)) "DES_NUM")
+      (setq idx i)
+    )
+    (setq i (1+ i))
+  )
+  
+  (if (null idx)
+    nil
+    (progn
+      (foreach item dataList
+        (setq num (nth idx item))
+        (if (assoc num seen)
+          (setq duplicates (cons (strcat "DES_NUM " num) duplicates))
+          (setq seen (cons (cons num T) seen))
+        )
+      )
+      (if duplicates
+        (progn
+          (setq result "")
+          (foreach dup (reverse duplicates)
+            (setq result (strcat result dup "\n"))
+          )
+          result
+        )
+        nil
+      )
+    )
+  )
 )
 
 ;; ============================================================================
@@ -295,19 +405,375 @@
 (defun Menu_Exportar ( / loopSub optSub)
   (setq loopSub T)
   (while loopSub
+    (textscr)
     (princ "\n\n   --- EXPORTAR LISTA DE DESENHOS ---")
-    (princ "\n   1. Gerar CSV")
-    (princ "\n   2. Exportar JSON")
+    (princ "\n   1. Gerar CSV (Default)")
+    (princ "\n   2. Gerar CSV (Configurar Colunas)")
+    (princ "\n   3. Exportar JSON")
     (princ "\n   0. Voltar")
-    (initget "1 2 0")
-    (setq optSub (getkword "\n   Opcao [1/2/0]: "))
+    (initget "1 2 3 0")
+    (setq optSub (getkword "\n   Opcao [1/2/3/0]: "))
     (cond
-      ((= optSub "1") (Run_GenerateCSV))
-      ((= optSub "2") (princ "\nEm desenvolvimento."))
+      ((= optSub "1") (Run_GenerateCSV_Default))
+      ((= optSub "2") (Run_GenerateCSV_Custom))
+      ((= optSub "3") (princ "\nEm desenvolvimento."))
       ((= optSub "0") (setq loopSub nil))
       ((= optSub nil) (setq loopSub nil))
     )
   )
+)
+
+;; ============================================================================
+;; EXPORTAR CSV - DEFAULT (colunas fixas)
+;; ============================================================================
+(defun Run_GenerateCSV_Default ( / )
+  (Run_GenerateCSV_Engine nil)
+)
+
+;; ============================================================================
+;; EXPORTAR CSV - CUSTOM (escolher colunas)
+;; ============================================================================
+(defun Run_GenerateCSV_Custom ( / allTags selectedTags i choice userInput tagList)
+  ;; Obter todos os tags disponíveis
+  (setq allTags (GetAllAvailableTags))
+  
+  (if (null allTags)
+    (princ "\nNenhum desenho encontrado.")
+    (progn
+      (princ "\n\n=== CONFIGURAR COLUNAS CSV ===")
+      (princ "\n\nTags disponiveis:")
+      (setq i 1)
+      (foreach tag allTags
+        (princ (strcat "\n " (itoa i) ". " tag))
+        (setq i (1+ i))
+      )
+      
+      (princ "\n\n--> Selecione os tags a exportar:")
+      (princ "\n    (Exemplo: 1,3,5 ou 2-8 ou 1,3-5,9)")
+      (princ "\n    Enter = TODOS")
+      (setq userInput (getstring T "\nOpcao: "))
+      
+      (if (= userInput "")
+        ;; TODOS
+        (setq selectedTags allTags)
+        ;; SELECAO
+        (setq selectedTags (ParseTagSelection allTags userInput))
+      )
+      
+      (if (null selectedTags)
+        (princ "\nNenhum tag selecionado.")
+        (progn
+          (princ (strcat "\n\nTags selecionados: " (itoa (length selectedTags))))
+          (foreach tag selectedTags
+            (princ (strcat "\n  - " tag))
+          )
+          
+          ;; Perguntar ordem
+          (princ "\n\n--> Alterar ordem das colunas?")
+          (initget "Sim Nao")
+          (if (= (getkword "\n    [Sim/Nao] <Nao>: ") "Sim")
+            (setq selectedTags (ReorderTags selectedTags))
+          )
+          
+          ;; Exportar com tags customizados
+          (Run_GenerateCSV_Engine selectedTags)
+        )
+      )
+    )
+  )
+)
+
+;; Obtem todos os tags disponiveis (DES_NUM sempre incluido, revisoes compactadas)
+(defun GetAllAvailableTags ( / doc found blk allTags tag)
+  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
+  (setq allTags '())
+  (setq found nil)
+  
+  (vlax-for lay (vla-get-Layouts doc)
+    (if (and (not found) 
+             (/= (vla-get-ModelType lay) :vlax-true))
+      (vlax-for blk (vla-get-Block lay)
+        (if (IsTargetBlock blk)
+          (progn
+            (foreach att (vlax-invoke blk 'GetAttributes)
+              (setq tag (strcase (vla-get-TagString att)))
+              (if (and (not (wcmatch tag "REV_?,DATA_?,DESC_?"))
+                       (not (member tag allTags)))
+                (setq allTags (cons tag allTags))
+              )
+            )
+            ;; Adicionar "REVISAO_ATUAL" como campo virtual
+            (if (not (member "REVISAO_ATUAL" allTags))
+              (setq allTags (cons "REVISAO_ATUAL" allTags))
+            )
+            (setq found T)
+          )
+        )
+      )
+    )
+  )
+  
+  (vl-sort allTags '<)
+)
+
+;; Converte string de selecao (ex: "1,3" ou "2-5") em lista de tags
+(defun ParseTagSelection (allTags selStr / result parts part startNum endNum i num)
+  (setq result '())
+  (setq parts (StrSplit selStr ","))
+  
+  (foreach part parts
+    (setq part (vl-string-trim " " part))
+    (if (vl-string-search "-" part)
+      ;; Range
+      (progn
+        (setq startNum (atoi (car (StrSplit part "-"))))
+        (setq endNum (atoi (cadr (StrSplit part "-"))))
+        (setq i startNum)
+        (while (<= i endNum)
+          (if (and (> i 0) (<= i (length allTags)))
+            (if (not (member (nth (1- i) allTags) result))
+              (setq result (cons (nth (1- i) allTags) result))
+            )
+          )
+          (setq i (1+ i))
+        )
+      )
+      ;; Numero unico
+      (progn
+        (setq num (atoi part))
+        (if (and (> num 0) (<= num (length allTags)))
+          (if (not (member (nth (1- num) allTags) result))
+            (setq result (cons (nth (1- num) allTags) result))
+          )
+        )
+      )
+    )
+  )
+  
+  (reverse result)
+)
+
+;; Permite reordenar tags
+(defun ReorderTags (tagList / newOrder i currentTag newPos loop)
+  (setq newOrder '())
+  (setq i 1)
+  
+  (princ "\n\n=== REORDENAR COLUNAS ===")
+  (princ "\nDigite a ordem desejada (1,2,3...)")
+  (princ "\nOu pressione Enter para manter ordem atual\n")
+  
+  (foreach tag tagList
+    (princ (strcat "\n" (itoa i) ". " tag))
+    (setq i (1+ i))
+  )
+  
+  (princ "\n\nNova ordem (ex: 3,1,2,4): ")
+  (setq userInput (getstring T))
+  
+  (if (= userInput "")
+    tagList
+    (progn
+      (setq parts (StrSplit userInput ","))
+      (foreach part parts
+        (setq num (atoi (vl-string-trim " " part)))
+        (if (and (> num 0) (<= num (length tagList)))
+          (setq newOrder (cons (nth (1- num) tagList) newOrder))
+        )
+      )
+      (reverse newOrder)
+    )
+  )
+)
+
+;; ============================================================================
+;; MOTOR DE EXPORTACAO CSV (com tags configuráveis)
+;; ============================================================================
+(defun Run_GenerateCSV_Engine (customTags / doc path dwgName defaultName csvFile fileDes layoutList dataList sortMode 
+                                             duplicates continueExport userChoice dateErrors allDateErrors 
+                                             blk layName header row tags)
+  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
+  (setq path (getvar "DWGPREFIX"))
+  (setq dwgName (GetDWGName))
+  
+  ;; Definir tags a exportar
+  (if customTags
+    (setq tags customTags)
+    ;; Default: DWG_SOURCE, TIPO, DES_NUM, TITULO, REVISAO_ATUAL (3 colunas), ID_CAD
+    (setq tags '("DWG_SOURCE" "TIPO" "DES_NUM" "TITULO" "REVISAO_ATUAL" "ID_CAD"))
+  )
+  
+  (princ "\nA recolher dados (Ignorando TEMPLATE)... ")
+  (setq dataList '())
+  (setq allDateErrors "")
+  (setq layoutList (GetLayoutsRaw doc))
+  
+  (foreach lay layoutList
+    (vlax-for blk (vla-get-Block lay)
+      (if (IsTargetBlock blk)
+        (progn
+          (setq layName (vla-get-Name lay))
+          (setq dateErrors (ValidateRevisionDates blk))
+          (if dateErrors
+            (setq allDateErrors (strcat allDateErrors "Des " (GetAttValue blk "DES_NUM") " (" layName "): " dateErrors "\n"))
+          )
+          ;; Coletar dados baseado nos tags selecionados
+          (setq row (CollectRowData blk layName dwgName tags))
+          (setq dataList (cons row dataList))
+        )
+      )
+    )
+  )
+  
+  (setq duplicates (FindDuplicateDES_NUM dataList))
+  (setq continueExport T)
+  
+  (if duplicates
+    (progn
+      (alert (strcat "AVISO: DES_NUM DUPLICADOS!\n\n" duplicates))
+      (initget "Sim Nao")
+      (setq userChoice (getkword "\nContinuar exportação? [Sim/Nao] <Nao>: "))
+      (if (or (null userChoice) (= userChoice "Nao"))
+        (setq continueExport nil)
+      )
+    )
+  )
+  
+  (if (and continueExport (/= allDateErrors ""))
+    (progn
+      (alert (strcat "AVISO: DATAS DE REVISÃO INCOERENTES!\n\n" allDateErrors))
+      (initget "Sim Nao")
+      (setq userChoice (getkword "\nContinuar exportação? [Sim/Nao] <Sim>: "))
+      (if (= userChoice "Nao")
+        (setq continueExport nil)
+      )
+    )
+  )
+  
+  (if continueExport
+    (progn
+      (setq defaultName (strcat path dwgName "_Lista.csv"))
+      (setq csvFile (getfiled "Guardar Lista CSV" defaultName "csv" 1))
+      (if csvFile
+        (progn
+          (initget "1 2")
+          (setq sortMode (getkword "\nOrdenar por? [1] Tipo / [2] Número <2>: "))
+          (if (not sortMode) (setq sortMode "2"))
+          
+          ;; Ordenar dados
+          (setq dataList (SortDataList dataList tags sortMode))
+          
+          ;; Escrever ficheiro
+          (setq fileDes (open csvFile "w"))
+          (if fileDes
+            (progn
+              ;; Header
+              (setq header (BuildCSVHeader tags))
+              (write-line header fileDes)
+              
+              ;; Dados
+              (foreach row dataList
+                (write-line (BuildCSVRow row) fileDes)
+              )
+              (close fileDes)
+              (alert (strcat "Sucesso! Ficheiro criado:\n" csvFile "\n\nColunas: " (itoa (length tags))))
+            )
+            (alert "Erro: Ficheiro aberto?")
+          )
+        )
+        (princ "\nCancelado.")
+      )
+    )
+    (princ "\nExportação cancelada.")
+  )
+  (princ)
+)
+
+;; Coletar dados de uma linha baseado nos tags
+(defun CollectRowData (blk layName dwgName tags / row value maxRev)
+  (setq row '())
+  (foreach tag tags
+    (cond
+      ((= tag "DWG_SOURCE") (setq value dwgName))
+      ((= tag "ID_CAD") (setq value (vla-get-Handle blk)))
+      ((= tag "LAYOUT") (setq value layName))
+      ((= tag "REVISAO_ATUAL")
+        (setq maxRev (GetMaxRevision blk))
+        (setq value (strcat (CleanCSV (car maxRev)) ";" 
+                           (CleanCSV (cadr maxRev)) ";" 
+                           (CleanCSV (caddr maxRev))))
+      )
+      (T (setq value (CleanCSV (GetAttValue blk tag))))
+    )
+    (setq row (cons value row))
+  )
+  (reverse row)
+)
+
+;; Constroi header CSV
+(defun BuildCSVHeader (tags / header)
+  (setq header "")
+  (foreach tag tags
+    (if (= tag "REVISAO_ATUAL")
+      (setq header (strcat header (if (/= header "") ";" "") "REVISAO;DATA;DESCRICAO"))
+      (setq header (strcat header (if (/= header "") ";" "") tag))
+    )
+  )
+  header
+)
+
+;; Constroi linha CSV
+(defun BuildCSVRow (row / line)
+  (setq line "")
+  (foreach value row
+    (setq line (strcat line (if (/= line "") ";" "") value))
+  )
+  line
+)
+
+;; Ordenar dados
+(defun SortDataList (dataList tags sortMode / typeIdx numIdx)
+  (setq typeIdx (GetTagIndex tags "TIPO"))
+  (setq numIdx (GetTagIndex tags "DES_NUM"))
+  
+  (cond
+    ((= sortMode "1")
+      (if (and typeIdx numIdx)
+        (vl-sort dataList 
+          '(lambda (a b)
+            (if (= (strcase (nth typeIdx a)) (strcase (nth typeIdx b)))
+              (< (atoi (nth numIdx a)) (atoi (nth numIdx b)))
+              (< (strcase (nth typeIdx a)) (strcase (nth typeIdx b)))
+            )
+          )
+        )
+        dataList
+      )
+    )
+    ((= sortMode "2")
+      (if numIdx
+        (vl-sort dataList 
+          '(lambda (a b) (< (atoi (nth numIdx a)) (atoi (nth numIdx b))))
+        )
+        dataList
+      )
+    )
+    (T dataList)
+  )
+)
+
+;; Obter indice de um tag na lista
+(defun GetTagIndex (tags targetTag / i found index)
+  (setq i 0 found nil index nil)
+  (while (and (< i (length tags)) (not found))
+    (if (= (nth i tags) targetTag)
+      (progn
+        (setq index i)
+        (setq found T)
+      )
+    )
+    (setq i (1+ i))
+  )
+  index
 )
 
 ;; ============================================================================

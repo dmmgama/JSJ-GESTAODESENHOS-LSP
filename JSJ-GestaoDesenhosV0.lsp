@@ -66,25 +66,10 @@
 )
 
 ;; ============================================================================
-;; SUBMENU: EMITIR REVISAO (2.1)
+;; SUBMENU: EMITIR REVISAO (2.1) - Simplificado
 ;; ============================================================================
-(defun Menu_EmitirRevisao ( / loopSub optSub)
-  (setq loopSub T)
-  (while loopSub
-    (textscr)
-    (princ "\n\n   --- EMITIR REVISAO ---")
-    (princ "\n   1. Emitir em TODOS os desenhos")
-    (princ "\n   2. Emitir em desenho especifico")
-    (princ "\n   0. Voltar")
-    (initget "1 2 0")
-    (setq optSub (getkword "\n   Opcao [1/2/0]: "))
-    (cond
-      ((= optSub "1") (EmitirRevisao_Todos))
-      ((= optSub "2") (EmitirRevisao_Individual))
-      ((= optSub "0") (setq loopSub nil))
-      ((= optSub nil) (setq loopSub nil))
-    )
-  )
+(defun Menu_EmitirRevisao ( / )
+  (EmitirRevisao_Unificado)
 )
 
 ;; ============================================================================
@@ -326,9 +311,9 @@
 )
 
 ;; ============================================================================
-;; EMITIR REVISAO - TODOS OS DESENHOS (2.1)
+;; EMITIR REVISAO - UNIFICADO (TODOS ou SELECAO)
 ;; ============================================================================
-(defun EmitirRevisao_Todos ( / doc drawList revData revDesc count currentLetter nextLetter handle desNum dateStr)
+(defun EmitirRevisao_Unificado ( / doc drawList i item handle desNum currentLetter nextLetter revData revDesc dateStr targets targetList count selectedList)
   (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
   (setq drawList (GetDrawingList))
   
@@ -339,52 +324,75 @@
     )
     (progn
       (textscr)
-      (princ "\n\n=== EMITIR REVISAO EM TODOS OS DESENHOS ===")
+      (princ "\n\n=== EMITIR REVISAO ===")
       (princ (strcat "\nTotal de desenhos: " (itoa (length drawList))))
       
       ;; Mostrar estado atual de cada desenho
       (princ "\n\nEstado atual das revisoes:")
+      (setq i 0)
       (foreach item drawList
         (setq handle (car item))
         (setq desNum (cadr item))
         (setq currentLetter (GetMaxRevisionLetterByHandle handle))
         (setq nextLetter (GetNextRevisionLetter currentLetter))
+        (setq i (1+ i))
         (if nextLetter
-          (princ (strcat "\n  Des " desNum ": " (if currentLetter currentLetter "-") " -> " nextLetter))
-          (princ (strcat "\n  Des " desNum ": " currentLetter " (MAX - nao pode avancar)"))
+          (princ (strcat "\n  " (itoa i) ". Des " desNum ": " (if currentLetter currentLetter "-") " -> " nextLetter " (" (caddr item) ")"))
+          (princ (strcat "\n  " (itoa i) ". Des " desNum ": " currentLetter " (MAX) (" (caddr item) ")"))
         )
       )
       
-      (princ "\n")
-      (initget "Sim Nao")
-      (if (= (getkword "\nEmitir nova revisao em todos? [Sim/Nao] <Nao>: ") "Sim")
+      (princ "\n\n--> Em quais desenhos emitir revisao?")
+      (princ "\n    Enter = TODOS | Lista = 1,3,5 ou 2-5")
+      (setq targets (getstring T "\nOpcao: "))
+      
+      ;; Determinar lista de desenhos selecionados
+      (if (= targets "")
+        ;; TODOS
+        (setq selectedList drawList)
+        ;; SELECAO
+        (setq selectedList (ParseSelectionToList drawList targets))
+      )
+      
+      (if (null selectedList)
+        (princ "\nNenhum desenho valido selecionado.")
         (progn
-          (setq dateStr (GetTodayDate))
-          (setq revData (getstring T (strcat "\nData da revisao [" dateStr "]: ")))
-          (if (= revData "") (setq revData dateStr))
-          (setq revDesc (getstring T "\nDescricao da revisao: "))
+          (princ (strcat "\n\nDesenhos selecionados: " (itoa (length selectedList))))
           
-          (setq count 0)
-          (foreach item drawList
-            (setq handle (car item))
-            (setq desNum (cadr item))
-            (setq currentLetter (GetMaxRevisionLetterByHandle handle))
-            (setq nextLetter (GetNextRevisionLetter currentLetter))
-            
-            (if nextLetter
-              (progn
-                (EmitirRevisaoBloco handle nextLetter revData revDesc)
-                (setq count (1+ count))
-                (princ (strcat "\n  Des " desNum ": Emitida REV_" nextLetter))
+          (initget "Sim Nao")
+          (if (= (getkword "\nConfirmar emissao? [Sim/Nao] <Nao>: ") "Sim")
+            (progn
+              (setq dateStr (GetTodayDate))
+              (setq revData (getstring T (strcat "\nData da revisao [" dateStr "]: ")))
+              (if (= revData "") (setq revData dateStr))
+              (setq revDesc (getstring T "\nDescricao da revisao: "))
+              
+              (setq count 0)
+              (foreach item selectedList
+                (setq handle (car item))
+                (setq desNum (cadr item))
+                (setq currentLetter (GetMaxRevisionLetterByHandle handle))
+                (setq nextLetter (GetNextRevisionLetter currentLetter))
+                
+                (if nextLetter
+                  (progn
+                    (EmitirRevisaoBloco handle nextLetter revData revDesc)
+                    (setq count (1+ count))
+                    (princ (strcat "\n  Des " desNum ": Emitida REV_" nextLetter))
+                  )
+                  (princ (strcat "\n  Des " desNum ": Ja esta no maximo (E)"))
+                )
               )
+              
+              (vla-Regen doc acActiveViewport)
+              (if (> count 0)
+                (WriteLog (strcat "EMITIR REVISAO: " (itoa count) " desenhos - " revData " - " revDesc))
+              )
+              (alert (strcat "Revisao emitida em " (itoa count) " desenhos."))
             )
+            (princ "\nOperacao cancelada.")
           )
-          
-          (vla-Regen doc acActiveViewport)
-          (WriteLog (strcat "EMITIR REVISAO GLOBAL: " (itoa count) " desenhos - " revData " - " revDesc))
-          (alert (strcat "Revisao emitida em " (itoa count) " desenhos."))
         )
-        (princ "\nOperacao cancelada.")
       )
     )
   )
@@ -392,77 +400,47 @@
   (princ)
 )
 
-;; ============================================================================
-;; EMITIR REVISAO - DESENHO INDIVIDUAL (2.1)
-;; ============================================================================
-(defun EmitirRevisao_Individual ( / doc drawList i item userIdx handle desNum currentLetter nextLetter revData revDesc dateStr loop)
-  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
-  (setq drawList (GetDrawingList))
+;; Converte string de selecao (ex: "1,3,5" ou "2-5" ou "1,3-5,8") em lista de desenhos
+(defun ParseSelectionToList (drawList selStr / result parts item startNum endNum i num)
+  (setq result '())
+  (setq parts (StrSplit selStr ","))
   
-  (if (null drawList)
-    (progn
-      (alert "Nenhum desenho encontrado.")
-      (princ "\nNenhum desenho encontrado.")
-    )
-    (progn
-      (setq loop T)
-      (while loop
-        (textscr)
-        (princ "\n\n=== EMITIR REVISAO - SELECIONAR DESENHO ===\n")
-        (setq i 0)
-        (foreach item drawList
-          (setq handle (car item))
-          (setq desNum (cadr item))
-          (setq currentLetter (GetMaxRevisionLetterByHandle handle))
-          (setq nextLetter (GetNextRevisionLetter currentLetter))
-          (princ (strcat "\n " (itoa (1+ i)) ". [Des: " desNum "] Rev: " 
-                         (if currentLetter currentLetter "-")
-                         (if nextLetter (strcat " -> " nextLetter) " (MAX)")
-                         " - Tab: " (caddr item)))
+  (foreach part parts
+    (setq part (vl-string-trim " " part))
+    (if (vl-string-search "-" part)
+      ;; Range (ex: "2-5")
+      (progn
+        (setq startNum (atoi (car (StrSplit part "-"))))
+        (setq endNum (atoi (cadr (StrSplit part "-"))))
+        (setq i startNum)
+        (while (<= i endNum)
+          (if (and (> i 0) (<= i (length drawList)))
+            (progn
+              (setq item (nth (1- i) drawList))
+              (if (not (member item result))
+                (setq result (cons item result))
+              )
+            )
+          )
           (setq i (1+ i))
         )
-        
-        (setq userIdx (getint (strcat "\nEscolha o desenho (1-" (itoa i) ") ou 0 para sair: ")))
-        
-        (cond
-          ((or (null userIdx) (= userIdx 0))
-            (setq loop nil)
-          )
-          ((and (> userIdx 0) (<= userIdx i))
-            (setq item (nth (1- userIdx) drawList))
-            (setq handle (car item))
-            (setq desNum (cadr item))
-            (setq currentLetter (GetMaxRevisionLetterByHandle handle))
-            (setq nextLetter (GetNextRevisionLetter currentLetter))
-            
-            (if nextLetter
-              (progn
-                (princ (strcat "\n\nEmitir REV_" nextLetter " para Desenho " desNum))
-                (setq dateStr (GetTodayDate))
-                (setq revData (getstring T (strcat "\nData [" dateStr "]: ")))
-                (if (= revData "") (setq revData dateStr))
-                (setq revDesc (getstring T "\nDescricao: "))
-                
-                (EmitirRevisaoBloco handle nextLetter revData revDesc)
-                (vla-Regen doc acActiveViewport)
-                (WriteLog (strcat "EMITIR REVISAO: Des " desNum " - REV_" nextLetter " (" revData ") " revDesc))
-                (princ (strcat "\nREV_" nextLetter " emitida com sucesso!"))
-              )
-              (princ "\nEste desenho ja esta na revisao maxima (E).")
-            )
-            
-            (initget "Sim Nao")
-            (if (/= (getkword "\nEmitir outra revisao? [Sim/Nao] <Nao>: ") "Sim")
-              (setq loop nil)
+      )
+      ;; Numero unico
+      (progn
+        (setq num (atoi part))
+        (if (and (> num 0) (<= num (length drawList)))
+          (progn
+            (setq item (nth (1- num) drawList))
+            (if (not (member item result))
+              (setq result (cons item result))
             )
           )
-          (T (princ "\nNumero invalido."))
         )
       )
     )
   )
-  (graphscr)
-  (princ)
+  
+  (reverse result)
 )
 
 ;; ============================================================================

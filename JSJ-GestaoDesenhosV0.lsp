@@ -2,8 +2,9 @@
 ;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V37 - CSV CONFIGURAVEL)
 ;; ============================================================================
 
-;; Variável global para o utilizador (persiste durante sessão)
+;; Variáveis globais (persistem durante sessão)
 (setq *JSJ_USER* nil)
+(setq *JSJ_TAB_FORMAT* nil) ;; Formato de nomenclatura dos tabs
 
 ;; ============================================================================
 ;; FUNCOES AUXILIARES BASICAS (devem estar no inicio)
@@ -856,18 +857,194 @@
     (princ "\n   2. Ordenar Tabs")
     (princ "\n   3. Numerar por TIPO")
     (princ "\n   4. Numerar SEQUENCIAL")
+    (princ "\n   5. Definir Formato TAB")
+    (princ "\n   6. Aplicar Formato TAB")
     (princ "\n   0. Voltar")
-    (initget "1 2 3 4 0")
-    (setq optSub (getkword "\n   Opcao [1/2/3/4/0]: "))
+    (initget "1 2 3 4 5 6 0")
+    (setq optSub (getkword "\n   Opcao [1/2/3/4/5/6/0]: "))
     (cond
       ((= optSub "1") (Run_GenerateLayouts_FromTemplate_V26))
       ((= optSub "2") (Run_SortLayouts_Engine))
       ((= optSub "3") (AutoNumberByType))
       ((= optSub "4") (AutoNumberSequential))
+      ((= optSub "5") (DefinirFormatoTab))
+      ((= optSub "6") (AplicarFormatoTab))
       ((= optSub "0") (setq loopSub nil))
       ((= optSub nil) (setq loopSub nil))
     )
   )
+)
+
+;; ============================================================================
+;; DEFINIR FORMATO TAB (Nova funcionalidade V38)
+;; ============================================================================
+;; Define o formato de nomenclatura dos tabs
+;; Formato: "Numero Projeto"-EST-(DES_NUM)-"CODIGO FASE"-"CODIGO EMISSAO"-(R)
+;; Entre aspas = fixo definido pelo user
+;; Entre () = atributo da legenda
+;; Exemplo: 779-EST-001-PEX-A ou 779-EST-001-PEX (sem revisão)
+(defun DefinirFormatoTab ( / userFormat)
+  (princ "\n\n=== DEFINIR FORMATO TAB ===")
+  (princ "\n\nFormato atual: ")
+  (if *JSJ_TAB_FORMAT*
+    (princ *JSJ_TAB_FORMAT*)
+    (princ "(nenhum definido)")
+  )
+  
+  (princ "\n\n--- REGRAS DE FORMATO ---")
+  (princ "\n  \"texto\" = Fixo (ex: \"779\", \"EST\", \"PEX\")")
+  (princ "\n  (TAG)   = Atributo da legenda (ex: (DES_NUM), (TIPO), (R))")
+  (princ "\n  -       = Separador")
+  
+  (princ "\n\n--- EXEMPLOS ---")
+  (princ "\n  Formato: \"779\"-\"EST\"-(DES_NUM)-\"PEX\"-(R)")
+  (princ "\n  Resultado com REV: 779-EST-001-PEX-A")
+  (princ "\n  Resultado sem REV: 779-EST-001-PEX")
+  
+  (princ "\n  Formato: \"P\"(DES_NUM)\"-\"(TIPO)")
+  (princ "\n  Resultado: P001-PLANTA")
+  
+  (princ "\n\n--- TAGS DISPONIVEIS ---")
+  (princ "\n  (DES_NUM), (TIPO), (TITULO), (R)")
+  (princ "\n  (CLIENTE), (OBRA), (FASE), etc.")
+  
+  (princ "\n\n-----------------------------------------")
+  (setq userFormat (getstring T "\nNovo formato (Enter = cancelar): "))
+  
+  (if (and userFormat (/= userFormat ""))
+    (progn
+      (setq *JSJ_TAB_FORMAT* userFormat)
+      (princ (strcat "\n\nFormato definido: " *JSJ_TAB_FORMAT*))
+      (princ "\n\nUse 'Aplicar Formato TAB' (opcao 6) para renomear todos os tabs.")
+      (WriteLog (strcat "FORMATO TAB: Definido como '" userFormat "'"))
+    )
+    (princ "\nCancelado.")
+  )
+  (princ)
+)
+
+;; ============================================================================
+;; APLICAR FORMATO TAB (Nova funcionalidade V38)
+;; ============================================================================
+;; Renomeia todos os tabs de acordo com o formato definido
+(defun AplicarFormatoTab ( / doc count)
+  (if (not *JSJ_TAB_FORMAT*)
+    (alert "Erro: Nenhum formato definido!\n\nUse primeiro 'Definir Formato TAB' (opcao 5).")
+    (progn
+      (princ "\n\n=== APLICAR FORMATO TAB ===")
+      (princ (strcat "\nFormato atual: " *JSJ_TAB_FORMAT*))
+      
+      (initget "Sim Nao")
+      (if (= (getkword "\n\nRenomear todos os tabs? [Sim/Nao] <Nao>: ") "Sim")
+        (progn
+          (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
+          (setq count 0)
+          
+          (princ "\nA processar...")
+          
+          (vlax-for lay (vla-get-Layouts doc)
+            (if (and (/= (vla-get-ModelType lay) :vlax-true)
+                     (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
+              (vlax-for blk (vla-get-Block lay)
+                (if (IsTargetBlock blk)
+                  (progn
+                    (setq newTabName (BuildTabName blk *JSJ_TAB_FORMAT*))
+                    (if newTabName
+                      (progn
+                        (vla-put-Name lay newTabName)
+                        (setq count (1+ count))
+                        (princ (strcat "\n  " (vla-get-Name lay) " -> " newTabName))
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+          
+          (vla-Regen doc acActiveViewport)
+          (WriteLog (strcat "FORMATO TAB: Aplicado a " (itoa count) " layouts"))
+          (alert (strcat "Concluido!\n\n" (itoa count) " tabs renomeados."))
+        )
+        (princ "\nCancelado.")
+      )
+    )
+  )
+  (princ)
+)
+
+;; ============================================================================
+;; MOTOR DE CONSTRUCAO DO NOME DO TAB
+;; ============================================================================
+;; Constrói o nome do tab baseado no formato e nos atributos do bloco
+;; Formato: "779"-"EST"-(DES_NUM)-"PEX"-(R)
+;; Se (R) estiver vazio, omite o sufixo -(R)
+(defun BuildTabName (blk formatStr / result i char inQuote inParen buffer attrName attrValue revValue)
+  (setq result ""
+        i 1
+        inQuote nil
+        inParen nil
+        buffer "")
+  
+  ;; Parse do formato caractere por caractere
+  (while (<= i (strlen formatStr))
+    (setq char (substr formatStr i 1))
+    
+    (cond
+      ;; Inicio de texto fixo
+      ((and (= char "\"") (not inParen))
+        (if inQuote
+          (progn
+            ;; Fim de texto fixo - adiciona buffer ao resultado
+            (setq result (strcat result buffer))
+            (setq buffer "")
+            (setq inQuote nil)
+          )
+          ;; Inicio de texto fixo
+          (setq inQuote T)
+        )
+      )
+      
+      ;; Inicio de atributo
+      ((and (= char "(") (not inQuote))
+        (setq inParen T)
+      )
+      
+      ;; Fim de atributo
+      ((and (= char ")") (not inQuote))
+        (setq inParen nil)
+        (setq attrName buffer)
+        (setq attrValue (GetAttValue blk attrName))
+        
+        ;; Regra especial: Se tag = R e valor vazio, ignora este segmento e o separador anterior
+        (if (and (= (strcase attrName) "R") (or (= attrValue "") (= attrValue "-")))
+          (progn
+            ;; Remove ultimo separador "-" se existir
+            (if (= (substr result (strlen result) 1) "-")
+              (setq result (substr result 1 (1- (strlen result))))
+            )
+          )
+          ;; Caso normal: adiciona valor
+          (setq result (strcat result attrValue))
+        )
+        (setq buffer "")
+      )
+      
+      ;; Construir buffer (dentro de aspas ou parenteses)
+      ((or inQuote inParen)
+        (setq buffer (strcat buffer char))
+      )
+      
+      ;; Separadores ou outros caracteres fora de aspas/parenteses
+      (T
+        (setq result (strcat result char))
+      )
+    )
+    
+    (setq i (1+ i))
+  )
+  
+  result
 )
 
 ;; ============================================================================

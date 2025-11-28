@@ -121,8 +121,10 @@
     )
   )
 )
-)
 
+(defun FormatNum (n) 
+  (if (< n 10) (strcat "0" (itoa n)) (itoa n))
+)
 (defun FormatNum (n) 
   (if (< n 10) (strcat "0" (itoa n)) (itoa n))
 )

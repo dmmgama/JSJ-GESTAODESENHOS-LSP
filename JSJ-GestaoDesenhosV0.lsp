@@ -879,11 +879,9 @@
 ;; DEFINIR FORMATO TAB (Nova funcionalidade V38)
 ;; ============================================================================
 ;; Define o formato de nomenclatura dos tabs
-;; Formato: "Numero Projeto"-EST-(DES_NUM)-"CODIGO FASE"-"CODIGO EMISSAO"-(R)
-;; Entre aspas = fixo definido pelo user
-;; Entre () = atributo da legenda
-;; Exemplo: 779-EST-001-PEX-A ou 779-EST-001-PEX (sem revisão)
-(defun DefinirFormatoTab ( / userFormat)
+;; Formato fixo: "[NumProj]"-"EST"-(DES_NUM)-"PE"-"E[NumEmissao]"-(R)
+;; Exemplo: 779-EST-001-PE-E00-A ou 779-EST-001-PE-E00 (sem revisão)
+(defun DefinirFormatoTab ( / numProj numEmissao userFormat)
   (princ "\n\n=== DEFINIR FORMATO TAB ===")
   (princ "\n\nFormato atual: ")
   (if *JSJ_TAB_FORMAT*
@@ -891,34 +889,37 @@
     (princ "(nenhum definido)")
   )
   
-  (princ "\n\n--- REGRAS DE FORMATO ---")
-  (princ "\n  \"texto\" = Fixo (ex: \"779\", \"EST\", \"PEX\")")
-  (princ "\n  (TAG)   = Atributo da legenda (ex: (DES_NUM), (TIPO), (R))")
-  (princ "\n  -       = Separador")
+  (princ "\n\n--- FORMATO FIXO ---")
+  (princ "\n  [Num.Projeto]-EST-[DES_NUM]-PE-E[Num.Emissao]-[R]")
+  (princ "\n\n  Fixo: EST (especialidade), PE (fase), E (prefixo emissao)")
+  (princ "\n  Variavel: DES_NUM (numero desenho), R (revisao)")
   
-  (princ "\n\n--- EXEMPLOS ---")
-  (princ "\n  Formato: \"779\"-\"EST\"-(DES_NUM)-\"PEX\"-(R)")
-  (princ "\n  Resultado com REV: 779-EST-001-PEX-A")
-  (princ "\n  Resultado sem REV: 779-EST-001-PEX")
-  
-  (princ "\n  Formato: \"P\"(DES_NUM)\"-\"(TIPO)")
-  (princ "\n  Resultado: P001-PLANTA")
-  
-  (princ "\n\n--- TAGS DISPONIVEIS ---")
-  (princ "\n  (DES_NUM), (TIPO), (TITULO), (R)")
-  (princ "\n  (CLIENTE), (OBRA), (FASE), etc.")
+  (princ "\n\n--- EXEMPLO ---")
+  (princ "\n  Numero Projeto: 779")
+  (princ "\n  Numero Emissao: 00")
+  (princ "\n  Resultado: 779-EST-001-PE-E00-A (com revisao A)")
+  (princ "\n             779-EST-001-PE-E00 (sem revisao)")
   
   (princ "\n\n-----------------------------------------")
-  (setq userFormat (getstring T "\nNovo formato (Enter = cancelar): "))
+  (setq numProj (getstring T "\nNumero do Projeto (ex: 779): "))
   
-  (if (and userFormat (/= userFormat ""))
+  (if (and numProj (/= numProj ""))
     (progn
-      (setq *JSJ_TAB_FORMAT* userFormat)
-      (princ (strcat "\n\nFormato definido: " *JSJ_TAB_FORMAT*))
-      (princ "\n\nUse 'Aplicar Formato TAB' (opcao 6) para renomear todos os tabs.")
-      (WriteLog (strcat "FORMATO TAB: Definido como '" userFormat "'"))
+      (setq numEmissao (getstring T "\nNumero de Emissao (ex: 00): "))
+      
+      (if (and numEmissao (/= numEmissao ""))
+        (progn
+          ;; Constroi formato automaticamente
+          (setq userFormat (strcat "\"" numProj "\"" "-" "\"EST\"" "-" "(DES_NUM)" "-" "\"PE\"" "-" "\"E" numEmissao "\"" "-" "(R)"))
+          (setq *JSJ_TAB_FORMAT* userFormat)
+          (princ (strcat "\n\nFormato definido: " *JSJ_TAB_FORMAT*))
+          (princ "\n\nUse 'Aplicar Formato TAB' (opcao 6) para renomear todos os tabs.")
+          (WriteLog (strcat "FORMATO TAB: Definido como '" userFormat "'"))
+        )
+        (princ "\nCancelado - emissao vazia.")
+      )
     )
-    (princ "\nCancelado.")
+    (princ "\nCancelado - projeto vazio.")
   )
   (princ)
 )
@@ -949,11 +950,16 @@
                 (if (IsTargetBlock blk)
                   (progn
                     (setq newTabName (BuildTabName blk *JSJ_TAB_FORMAT*))
-                    (if newTabName
+                    (if (and newTabName (/= newTabName ""))
                       (progn
-                        (vla-put-Name lay newTabName)
-                        (setq count (1+ count))
-                        (princ (strcat "\n  " (vla-get-Name lay) " -> " newTabName))
+                        (setq oldName (vla-get-Name lay))
+                        (if (not (vl-catch-all-error-p 
+                                   (vl-catch-all-apply 'vla-put-Name (list lay newTabName))))
+                          (progn
+                            (setq count (1+ count))
+                            (princ (strcat "\n  " oldName " -> " newTabName))
+                          )
+                        )
                       )
                     )
                   )
@@ -1045,6 +1051,49 @@
   )
   
   result
+)
+
+;; ============================================================================
+;; ATUALIZAR NOME DE TAB DE UM BLOCO ESPECIFICO
+;; ============================================================================
+;; Atualiza o nome do tab do layout onde está o bloco (apenas se formato definido)
+(defun UpdateTabName (handle / ename obj doc lay newTabName foundLay)
+  (if *JSJ_TAB_FORMAT*
+    (progn
+      (setq ename nil)
+      (if (not (vl-catch-all-error-p (vl-catch-all-apply 'handent (list handle))))
+        (setq ename (handent handle))
+      )
+      (if (and ename (setq obj (vlax-ename->vla-object ename)))
+        (progn
+          (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
+          (setq foundLay nil)
+          ;; Percorrer layouts para encontrar qual contem este bloco
+          (vlax-for lay (vla-get-Layouts doc)
+            (if (and (not foundLay)
+                     (/= (vla-get-ModelType lay) :vlax-true)
+                     (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
+              (vlax-for blk (vla-get-Block lay)
+                (if (and (not foundLay) 
+                         (= (vla-get-Handle blk) handle))
+                  (setq foundLay lay)
+                )
+              )
+            )
+          )
+          ;; Se encontrou o layout, renomear
+          (if foundLay
+            (progn
+              (setq newTabName (BuildTabName obj *JSJ_TAB_FORMAT*))
+              (if (and newTabName (/= newTabName ""))
+                (vl-catch-all-apply 'vla-put-Name (list foundLay newTabName))
+              )
+            )
+          )
+        )
+      )
+    )
+  )
 )
 
 ;; ============================================================================
@@ -1177,7 +1226,10 @@
         ;; Determina qual a letra da última revisão preenchida (E→D→C→B→A)
         (setq maxRevLetter (GetMaxRevisionLetter obj))
         (if maxRevLetter
-          (UpdateSingleTag handle "R" maxRevLetter)
+          (progn
+            (UpdateSingleTag handle "R" maxRevLetter)
+            (UpdateTabName handle) ;; Auto-atualizar tab quando R muda
+          )
         )
       )
     )
@@ -1356,6 +1408,7 @@
   (UpdateSingleTag handle (strcat "DATA_" revLetter) revData)
   (UpdateSingleTag handle (strcat "DESC_" revLetter) revDesc)
   (UpdateAttributeR handle)
+  ;; UpdateAttributeR já chama UpdateTabName, não precisa duplicar
 )
 
 ;; Obtém a letra da última revisão por handle
@@ -1468,7 +1521,36 @@
 (defun Run_ImportCSV ( / doc path defaultName csvFile fileDes line parts valDwgSource valTipo valNum valTit valRev valData valDesc valHandle countUpdates) (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) (setq path (getvar "DWGPREFIX")) (setq csvFile (getfiled "Selecione o ficheiro CSV" path "csv" 4)) (if (and csvFile (findfile csvFile)) (progn (setq fileDes (open csvFile "r")) (if fileDes (progn (princ "\nA processar CSV... ") (setq countUpdates 0) (read-line fileDes) (while (setq line (read-line fileDes)) (setq parts (StrSplit line ";")) (if (>= (length parts) 8) (progn (setq valDwgSource (nth 0 parts)) (setq valTipo (nth 1 parts)) (setq valNum (nth 2 parts)) (setq valTit (nth 3 parts)) (setq valRev (nth 4 parts)) (setq valData (nth 5 parts)) (setq valDesc (nth 6 parts)) (setq valHandle (nth 7 parts)) (if (and valHandle (/= valHandle "")) (if (UpdateBlockByHandleAndData valHandle valTipo valNum valTit valRev valData valDesc) (setq countUpdates (1+ countUpdates))))))) (close fileDes) (vla-Regen doc acActiveViewport) (if (> countUpdates 0) (WriteLog (strcat "IMPORTAR CSV: " (itoa countUpdates) " desenhos atualizados"))) (alert (strcat "Concluído!\n" (itoa countUpdates) " desenhos atualizados."))) (alert "Erro ao abrir ficheiro."))) (princ "\nCancelado.")) (princ))
 (defun CleanCSV (str) (if (= str nil) (setq str "")) (setq str (vl-string-translate ";" "," str)) (vl-string-trim " \"" str))
 (defun StrSplit (str del / pos len lst) (setq len (strlen del)) (while (setq pos (vl-string-search del str)) (setq lst (cons (vl-string-trim " " (substr str 1 pos)) lst) str (substr str (+ 1 pos len)))) (reverse (cons (vl-string-trim " " str) lst)))
-(defun UpdateBlockByHandleAndData (handle tipo num tit rev dataStr descStr / ename obj atts revTag dataTag descTag success) (setq success nil) (if (not (vl-catch-all-error-p (vl-catch-all-apply 'handent (list handle)))) (setq ename (handent handle))) (if (and ename (setq obj (vlax-ename->vla-object ename))) (if (IsTargetBlock obj) (progn (UpdateSingleTag handle "TIPO" tipo) (UpdateSingleTag handle "DES_NUM" num) (UpdateSingleTag handle "TITULO" tit) (if (and rev (/= rev "") (/= rev "-")) (progn (setq revTag (strcat "REV_" rev)) (setq dataTag (strcat "DATA_" rev)) (setq descTag (strcat "DESC_" rev)) (UpdateSingleTag handle revTag rev) (UpdateSingleTag handle dataTag dataStr) (UpdateSingleTag handle descTag descStr) (UpdateAttributeR handle))) (princ ".") (setq success T)))) success)
+(defun UpdateBlockByHandleAndData (handle tipo num tit rev dataStr descStr / ename obj atts revTag dataTag descTag success) 
+  (setq success nil) 
+  (if (not (vl-catch-all-error-p (vl-catch-all-apply 'handent (list handle)))) 
+    (setq ename (handent handle))
+  ) 
+  (if (and ename (setq obj (vlax-ename->vla-object ename))) 
+    (if (IsTargetBlock obj) 
+      (progn 
+        (UpdateSingleTag handle "TIPO" tipo) 
+        (UpdateSingleTag handle "DES_NUM" num)
+        (UpdateTabName handle) ;; Auto-atualizar tab quando DES_NUM muda
+        (UpdateSingleTag handle "TITULO" tit) 
+        (if (and rev (/= rev "") (/= rev "-")) 
+          (progn 
+            (setq revTag (strcat "REV_" rev)) 
+            (setq dataTag (strcat "DATA_" rev)) 
+            (setq descTag (strcat "DESC_" rev)) 
+            (UpdateSingleTag handle revTag rev) 
+            (UpdateSingleTag handle dataTag dataStr) 
+            (UpdateSingleTag handle descTag descStr) 
+            (UpdateAttributeR handle) ;; UpdateAttributeR já chama UpdateTabName
+          )
+        ) 
+        (princ ".") 
+        (setq success T)
+      )
+    )
+  ) 
+  success
+)
 (defun GetMaxRevision (blk / checkRev finalRev finalDate finalDesc) (setq finalRev "-" finalDate "-" finalDesc "-") (foreach letra '("E" "D" "C" "B" "A") (if (= finalRev "-") (progn (setq checkRev (GetAttValue blk (strcat "REV_" letra))) (if (and (/= checkRev "") (/= checkRev " ")) (progn (setq finalRev checkRev) (setq finalDate (GetAttValue blk (strcat "DATA_" letra))) (setq finalDesc (GetAttValue blk (strcat "DESC_" letra)))))))) (list finalRev finalDate finalDesc))
 (defun GetGlobalDefinitions (blkName / doc blocks blkDef atts tag val dataList) (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) (setq blocks (vla-get-Blocks doc)) (setq dataList '()) (if (not (vl-catch-all-error-p (setq blkDef (vla-Item blocks blkName)))) (vlax-for obj blkDef (if (and (= (vla-get-ObjectName obj) "AcDbAttributeDefinition") (not (wcmatch (strcase (vla-get-TagString obj)) "DES_NUM,REV_*,DATA_*,DESC_*"))) (progn (setq tag (vla-get-TagString obj)) (setq val (getstring T (strcat "\nValor para '" tag "': "))) (if (/= val "") (setq dataList (cons (cons (strcase tag) val) dataList))))))) dataList)
 (defun catch-apply (func params / result) (if (vl-catch-all-error-p (setq result (vl-catch-all-apply func params))) nil result))
@@ -1526,8 +1608,72 @@
   (graphscr)
   (princ)
 )
-(defun AutoNumberByType ( / doc dataList blk typeVal handleVal tabOrd sortedList curType count i) (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) (setq dataList '()) (princ "\n\nA analisar...") (vlax-for lay (vla-get-Layouts doc) (if (/= (vla-get-ModelType lay) :vlax-true) (vlax-for blk (vla-get-Block lay) (if (IsTargetBlock blk) (progn (setq typeVal (GetAttValue blk "TIPO")) (if (= typeVal "") (setq typeVal "INDEFINIDO")) (setq handleVal (vla-get-Handle blk)) (setq tabOrd (vla-get-TabOrder lay)) (setq dataList (cons (list typeVal tabOrd handleVal) dataList))))))) (setq sortedList (vl-sort dataList '(lambda (a b) (if (= (strcase (car a)) (strcase (car b))) (< (cadr a) (cadr b)) (< (strcase (car a)) (strcase (car b))))))) (setq curType "" count 0 i 0) (foreach item sortedList (if (/= (strcase (car item)) curType) (progn (setq curType (strcase (car item))) (setq count 1)) (setq count (1+ count))) (UpdateSingleTag (caddr item) "DES_NUM" (FormatNum count)) (setq i (1+ i))) (vla-Regen doc acActiveViewport) (alert (strcat "Concluído: " (itoa i))))
-(defun AutoNumberSequential ( / doc sortedLayouts count i) (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) (initget "Sim Nao") (if (= (getkword "\nNumerar sequencialmente? [Sim/Nao] <Nao>: ") "Sim") (progn (setq sortedLayouts (GetLayoutsRaw doc)) (setq sortedLayouts (vl-sort sortedLayouts '(lambda (a b) (< (vla-get-TabOrder a) (vla-get-TabOrder b))))) (setq count 1 i 0) (foreach lay sortedLayouts (vlax-for blk (vla-get-Block lay) (if (IsTargetBlock blk) (progn (UpdateSingleTag (vla-get-Handle blk) "DES_NUM" (FormatNum count)) (setq count (1+ count)) (setq i (1+ i)))))) (vla-Regen doc acActiveViewport) (alert (strcat "Concluído: " (itoa i))))))
+(defun AutoNumberByType ( / doc dataList blk typeVal handleVal tabOrd sortedList curType count i) 
+  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) 
+  (setq dataList '()) 
+  (princ "\n\nA analisar...") 
+  (vlax-for lay (vla-get-Layouts doc) 
+    (if (/= (vla-get-ModelType lay) :vlax-true) 
+      (vlax-for blk (vla-get-Block lay) 
+        (if (IsTargetBlock blk) 
+          (progn 
+            (setq typeVal (GetAttValue blk "TIPO")) 
+            (if (= typeVal "") (setq typeVal "INDEFINIDO")) 
+            (setq handleVal (vla-get-Handle blk)) 
+            (setq tabOrd (vla-get-TabOrder lay)) 
+            (setq dataList (cons (list typeVal tabOrd handleVal) dataList))
+          )
+        )
+      )
+    )
+  ) 
+  (setq sortedList (vl-sort dataList '(lambda (a b) 
+    (if (= (strcase (car a)) (strcase (car b))) 
+      (< (cadr a) (cadr b)) 
+      (< (strcase (car a)) (strcase (car b)))
+    )
+  ))) 
+  (setq curType "" count 0 i 0) 
+  (foreach item sortedList 
+    (if (/= (strcase (car item)) curType) 
+      (progn 
+        (setq curType (strcase (car item))) 
+        (setq count 1)
+      ) 
+      (setq count (1+ count))
+    ) 
+    (UpdateSingleTag (caddr item) "DES_NUM" (FormatNum count))
+    (UpdateTabName (caddr item)) ;; Auto-atualizar tab quando DES_NUM muda
+    (setq i (1+ i))
+  ) 
+  (vla-Regen doc acActiveViewport) 
+  (alert (strcat "Concluído: " (itoa i)))
+)
+(defun AutoNumberSequential ( / doc sortedLayouts count i) 
+  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) 
+  (initget "Sim Nao") 
+  (if (= (getkword "\nNumerar sequencialmente? [Sim/Nao] <Nao>: ") "Sim") 
+    (progn 
+      (setq sortedLayouts (GetLayoutsRaw doc)) 
+      (setq sortedLayouts (vl-sort sortedLayouts '(lambda (a b) (< (vla-get-TabOrder a) (vla-get-TabOrder b))))) 
+      (setq count 1 i 0) 
+      (foreach lay sortedLayouts 
+        (vlax-for blk (vla-get-Block lay) 
+          (if (IsTargetBlock blk) 
+            (progn 
+              (UpdateSingleTag (vla-get-Handle blk) "DES_NUM" (FormatNum count))
+              (UpdateTabName (vla-get-Handle blk)) ;; Auto-atualizar tab quando DES_NUM muda
+              (setq count (1+ count)) 
+              (setq i (1+ i))
+            )
+          )
+        )
+      ) 
+      (vla-Regen doc acActiveViewport) 
+      (alert (strcat "Concluído: " (itoa i)))
+    )
+  )
+)
 (defun ReleaseObject (obj) (if (and obj (not (vlax-object-released-p obj))) (vlax-release-object obj)))
 (defun IsTargetBlock (blk) (and (= (vla-get-ObjectName blk) "AcDbBlockReference") (= (strcase (vla-get-EffectiveName blk)) "LEGENDA_JSJ_V1")))
 (defun GetAttValue (blk tag / atts val) (setq atts (vlax-invoke blk 'GetAttributes) val "") (foreach att atts (if (= (strcase (vla-get-TagString att)) (strcase tag)) (setq val (vla-get-TextString att)))) val)

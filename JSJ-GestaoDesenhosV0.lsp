@@ -1965,3 +1965,15 @@
 (defun FormatNum (n) (if (< n 10) (strcat "0" (itoa n)) (itoa n)))
 (defun EscapeJSON (str / i char result len) (setq result "" len (strlen str) i 1) (while (<= i len) (setq char (substr str i 1)) (cond ((= char "\\") (setq result (strcat result "\\\\"))) ((= char "\"") (setq result (strcat result "\\\""))) (t (setq result (strcat result char)))) (setq i (1+ i))) result)
 (defun StringUnescape (str / result i char nextChar len) (setq result "" len (strlen str) i 1) (while (<= i len) (setq char (substr str i 1)) (if (and (= char "\\") (< i len)) (progn (setq nextChar (substr str (1+ i) 1)) (cond ((= nextChar "\\") (setq result (strcat result "\\"))) ((= nextChar "\"") (setq result (strcat result "\""))) (t (setq result (strcat result char)))) (setq i (1+ i))) (setq result (strcat result char))) (setq i (1+ i))) result)
+
+;; ============================================================================
+;; MENSAGEM DE CARREGAMENTO
+;; ============================================================================
+(princ "\n========================================")
+(princ "\n GESTAO DESENHOS JSJ V39.3")
+(princ "\n========================================")
+(princ "\n Comandos disponiveis:")
+(princ "\n   GESTAODESENHOSJSJ - Menu principal")
+(princ "\n   JSJDIAG - Diagnostico de atributos")
+(princ "\n========================================")
+(princ)

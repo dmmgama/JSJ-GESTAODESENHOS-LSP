@@ -1,5 +1,5 @@
 ;; ============================================================================
-;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V39.2 - ELEMENTO_TITULO Fix2)
+;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V39.3 - ELEMENTO_TITULO Debug)
 ;; ============================================================================
 
 ;; Variáveis globais (persistem durante sessão)
@@ -104,10 +104,18 @@
       (princ (strcat " -> ELEMENTO_TITULO='" resultado "'"))
       
       ;; Gravar ELEMENTO_TITULO diretamente (sem recursao)
+      (setq foundET nil)
       (foreach att (vlax-invoke obj 'GetAttributes)
         (if (= (strcase (vla-get-TagString att)) "ELEMENTO_TITULO")
-          (vla-put-TextString att resultado)
+          (progn
+            (vla-put-TextString att resultado)
+            (setq foundET T)
+            (princ " [GRAVADO]")
+          )
         )
+      )
+      (if (not foundET)
+        (princ " [AVISO: Atributo ELEMENTO_TITULO nao encontrado!]")
       )
       (vla-Update obj)
     )
@@ -353,6 +361,37 @@
   )
   (graphscr)
   (princ "\nGestao Desenhos JSJ Terminada.")
+  (princ)
+)
+
+;; ============================================================================
+;; DIAGNOSTICO - Lista todos atributos do primeiro bloco LEGENDA_JSJ_V1
+;; ============================================================================
+(defun c:JSJDIAG ( / doc found)
+  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
+  (setq found nil)
+  (textscr)
+  (princ "\n\n=== DIAGNOSTICO BLOCO LEGENDA_JSJ_V1 ===\n")
+  (vlax-for lay (vla-get-Layouts doc)
+    (if (not found)
+      (vlax-for blk (vla-get-Block lay)
+        (if (and (not found) (IsTargetBlock blk))
+          (progn
+            (princ (strcat "\nLayout: " (vla-get-Name lay)))
+            (princ "\n\nAtributos encontrados:")
+            (foreach att (vlax-invoke blk 'GetAttributes)
+              (princ (strcat "\n  " (vla-get-TagString att) " = '" (vla-get-TextString att) "'"))
+            )
+            (setq found T)
+          )
+        )
+      )
+    )
+  )
+  (if (not found)
+    (princ "\nERRO: Nenhum bloco LEGENDA_JSJ_V1 encontrado!")
+  )
+  (princ "\n")
   (princ)
 )
 

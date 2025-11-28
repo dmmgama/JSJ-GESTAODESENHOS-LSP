@@ -1,5 +1,5 @@
 ;; ============================================================================
-;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V39 - ELEMENTO_TITULO)
+;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V39.1 - ELEMENTO_TITULO Fix)
 ;; ============================================================================
 
 ;; Variáveis globais (persistem durante sessão)
@@ -33,8 +33,14 @@
           (vla-put-TextString att val))) 
       (vla-Update obj)
       ;; Se alterou ELEMENTO ou TITULO, recalcular ELEMENTO_TITULO
-      (if (or (= (strcase tag) "ELEMENTO") (= (strcase tag) "TITULO"))
-        (UpdateElementoTitulo handle)
+      ;; Passa o novo valor para evitar ler valor desatualizado
+      (cond
+        ((= (strcase tag) "ELEMENTO")
+          (UpdateElementoTitulo handle val nil)  ;; novo elemento, titulo=nil (ler do bloco)
+        )
+        ((= (strcase tag) "TITULO")
+          (UpdateElementoTitulo handle nil val)  ;; elemento=nil (ler do bloco), novo titulo
+        )
       )
     )
   )
@@ -49,14 +55,24 @@
 ;;   - Só ELEMENTO: "<ELEMENTO>"
 ;;   - Só TITULO: "<TITULO>"
 ;;   - Ambos vazios: ""
-(defun UpdateElementoTitulo (handle / ename obj elemento titulo resultado)
+;; UpdateElementoTitulo - Recalcula ELEMENTO_TITULO
+;; Parâmetros opcionais: novoElemento e novoTitulo
+;; Se nil, lê do bloco; se string, usa o valor passado
+(defun UpdateElementoTitulo (handle novoElemento novoTitulo / ename obj elemento titulo resultado)
   (if (not (vl-catch-all-error-p (vl-catch-all-apply 'handent (list handle))))
     (setq ename (handent handle))
   )
   (if (and ename (setq obj (vlax-ename->vla-object ename)))
     (progn
-      (setq elemento (vl-string-trim " " (GetAttValue obj "ELEMENTO")))
-      (setq titulo (vl-string-trim " " (GetAttValue obj "TITULO")))
+      ;; Usar valor passado ou ler do bloco
+      (if novoElemento
+        (setq elemento (vl-string-trim " " novoElemento))
+        (setq elemento (vl-string-trim " " (GetAttValue obj "ELEMENTO")))
+      )
+      (if novoTitulo
+        (setq titulo (vl-string-trim " " novoTitulo))
+        (setq titulo (vl-string-trim " " (GetAttValue obj "TITULO")))
+      )
       
       ;; Construir resultado baseado nas regras
       (cond
@@ -108,10 +124,11 @@
           (progn 
             (foreach att (vlax-invoke blk 'GetAttributes) 
               (setq tag (strcase (vla-get-TagString att))) 
-              ;; Excluir campos calculados e de sistema
+              ;; Excluir campos calculados, de sistema e únicos por desenho
               (if (and (/= tag "DES_NUM") 
                        (/= tag "FASE") 
                        (/= tag "R")
+                       (/= tag "TITULO")           ;; Único por desenho (não editável globalmente)
                        (/= tag "ELEMENTO_TITULO") ;; Campo calculado
                        (not (wcmatch tag "REV_?,DATA_?,DESC_?"))) 
                 (setq tagList (cons tag tagList)))) 
@@ -1787,7 +1804,7 @@
 (defun ReleaseObject (obj) (if (and obj (not (vlax-object-released-p obj))) (vlax-release-object obj)))
 ;; NOTA: IsTargetBlock, GetAttValue, UpdateSingleTag, UpdateBlockByHandle estão definidos no início do ficheiro
 ;; ApplyGlobalValue - Aplica valor a tag específico em todos os blocos
-;; Quando ELEMENTO ou TITULO são alterados, recalcula ELEMENTO_TITULO
+;; Quando ELEMENTO é alterado, recalcula ELEMENTO_TITULO (TITULO é único por desenho)
 (defun ApplyGlobalValue (targetTag targetVal / doc blkHandle) 
   (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) 
   (vlax-for lay (vla-get-Layouts doc) 
@@ -1800,11 +1817,12 @@
                 (vla-put-TextString att targetVal)
               )
             )
-            ;; Se ELEMENTO ou TITULO foi alterado, recalcular ELEMENTO_TITULO
-            (if (or (= targetTag "ELEMENTO") (= targetTag "TITULO"))
+            ;; Se ELEMENTO foi alterado, recalcular ELEMENTO_TITULO
+            ;; Passa o novo valor para evitar ler valor desatualizado
+            (if (= targetTag "ELEMENTO")
               (progn
                 (setq blkHandle (vla-get-Handle blk))
-                (UpdateElementoTitulo blkHandle)
+                (UpdateElementoTitulo blkHandle targetVal nil)
               )
             )
           )

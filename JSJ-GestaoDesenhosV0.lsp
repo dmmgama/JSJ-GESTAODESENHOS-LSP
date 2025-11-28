@@ -1,5 +1,5 @@
 ;; ============================================================================
-;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V39.3 - ELEMENTO_TITULO Debug)
+;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V39.5 - ELEMENTO_TITULO)
 ;; ============================================================================
 
 ;; Variáveis globais (persistem durante sessão)

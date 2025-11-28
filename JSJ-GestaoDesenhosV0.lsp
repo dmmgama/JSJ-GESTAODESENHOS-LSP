@@ -1057,38 +1057,36 @@
 ;; ATUALIZAR NOME DE TAB DE UM BLOCO ESPECIFICO
 ;; ============================================================================
 ;; Atualiza o nome do tab do layout onde está o bloco (apenas se formato definido)
-(defun UpdateTabName (handle / ename obj doc lay newTabName foundLay)
+(defun UpdateTabName (handle / doc lay blk foundLay foundBlk newTabName atts)
   (if *JSJ_TAB_FORMAT*
     (progn
-      (setq ename nil)
-      (if (not (vl-catch-all-error-p (vl-catch-all-apply 'handent (list handle))))
-        (setq ename (handent handle))
-      )
-      (if (and ename (setq obj (vlax-ename->vla-object ename)))
-        (progn
-          (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
-          (setq foundLay nil)
-          ;; Percorrer layouts para encontrar qual contem este bloco
-          (vlax-for lay (vla-get-Layouts doc)
-            (if (and (not foundLay)
-                     (/= (vla-get-ModelType lay) :vlax-true)
-                     (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
-              (vlax-for blk (vla-get-Block lay)
-                (if (and (not foundLay) 
-                         (= (vla-get-Handle blk) handle))
-                  (setq foundLay lay)
-                )
+      (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
+      (setq foundLay nil)
+      (setq foundBlk nil)
+      ;; Percorrer layouts para encontrar qual contem este bloco
+      (vlax-for lay (vla-get-Layouts doc)
+        (if (and (not foundLay)
+                 (/= (vla-get-ModelType lay) :vlax-true)
+                 (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
+          (vlax-for blk (vla-get-Block lay)
+            (if (and (not foundLay) 
+                     (= (vla-get-Handle blk) handle))
+              (progn
+                (setq foundLay lay)
+                (setq foundBlk blk)
               )
             )
           )
-          ;; Se encontrou o layout, renomear
-          (if foundLay
-            (progn
-              (setq newTabName (BuildTabName obj *JSJ_TAB_FORMAT*))
-              (if (and newTabName (/= newTabName ""))
-                (vl-catch-all-apply 'vla-put-Name (list foundLay newTabName))
-              )
-            )
+        )
+      )
+      ;; Se encontrou o layout, renomear
+      (if (and foundLay foundBlk)
+        (progn
+          ;; Forçar leitura atualizada dos atributos
+          (setq atts (vlax-invoke foundBlk 'GetAttributes))
+          (setq newTabName (BuildTabName foundBlk *JSJ_TAB_FORMAT*))
+          (if (and newTabName (/= newTabName ""))
+            (vl-catch-all-apply 'vla-put-Name (list foundLay newTabName))
           )
         )
       )
@@ -1225,12 +1223,13 @@
       (progn
         ;; Determina qual a letra da última revisão preenchida (E→D→C→B→A)
         (setq maxRevLetter (GetMaxRevisionLetter obj))
+        ;; Atualiza R (pode ser nil se nao houver revisoes)
         (if maxRevLetter
-          (progn
-            (UpdateSingleTag handle "R" maxRevLetter)
-            (UpdateTabName handle) ;; Auto-atualizar tab quando R muda
-          )
+          (UpdateSingleTag handle "R" maxRevLetter)
+          (UpdateSingleTag handle "R" "")
         )
+        ;; SEMPRE atualizar o nome do tab (independente de ter R ou não)
+        (UpdateTabName handle)
       )
     )
   )

@@ -1,5 +1,5 @@
 ;; ============================================================================
-;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V39 - ELEMENTO_TITULO)
+;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V37 - CSV CONFIGURAVEL)
 ;; ============================================================================
 
 ;; Variáveis globais (persistem durante sessão)
@@ -31,58 +31,7 @@
       (foreach att atts 
         (if (= (strcase (vla-get-TagString att)) (strcase tag)) 
           (vla-put-TextString att val))) 
-      (vla-Update obj)
-      ;; Se alterou ELEMENTO ou TITULO, recalcular ELEMENTO_TITULO
-      (if (or (= (strcase tag) "ELEMENTO") (= (strcase tag) "TITULO"))
-        (UpdateElementoTitulo handle)
-      )
-    )
-  )
-)
-
-;; ============================================================================
-;; ELEMENTO_TITULO - Atributo calculado automaticamente
-;; ============================================================================
-;; Combina ELEMENTO + " - " + TITULO
-;; Regras:
-;;   - Ambos preenchidos: "<ELEMENTO> - <TITULO>"
-;;   - Só ELEMENTO: "<ELEMENTO>"
-;;   - Só TITULO: "<TITULO>"
-;;   - Ambos vazios: ""
-(defun UpdateElementoTitulo (handle / ename obj elemento titulo resultado)
-  (if (not (vl-catch-all-error-p (vl-catch-all-apply 'handent (list handle))))
-    (setq ename (handent handle))
-  )
-  (if (and ename (setq obj (vlax-ename->vla-object ename)))
-    (progn
-      (setq elemento (vl-string-trim " " (GetAttValue obj "ELEMENTO")))
-      (setq titulo (vl-string-trim " " (GetAttValue obj "TITULO")))
-      
-      ;; Construir resultado baseado nas regras
-      (cond
-        ((and (= elemento "") (= titulo ""))
-          (setq resultado "")
-        )
-        ((= elemento "")
-          (setq resultado titulo)
-        )
-        ((= titulo "")
-          (setq resultado elemento)
-        )
-        (T
-          (setq resultado (strcat elemento " - " titulo))
-        )
-      )
-      
-      ;; Gravar ELEMENTO_TITULO diretamente (sem recursao)
-      (foreach att (vlax-invoke obj 'GetAttributes)
-        (if (= (strcase (vla-get-TagString att)) "ELEMENTO_TITULO")
-          (vla-put-TextString att resultado)
-        )
-      )
-      (vla-Update obj)
-    )
-  )
+      (vla-Update obj)))
 )
 
 (defun FormatNum (n) 
@@ -108,11 +57,9 @@
           (progn 
             (foreach att (vlax-invoke blk 'GetAttributes) 
               (setq tag (strcase (vla-get-TagString att))) 
-              ;; Excluir campos calculados e de sistema
               (if (and (/= tag "DES_NUM") 
                        (/= tag "FASE") 
-                       (/= tag "R")
-                       (/= tag "ELEMENTO_TITULO") ;; Campo calculado
+                       (/= tag "R") 
                        (not (wcmatch tag "REV_?,DATA_?,DESC_?"))) 
                 (setq tagList (cons tag tagList)))) 
             (setq found T)))))) 
@@ -578,7 +525,6 @@
 )
 
 ;; Obtem todos os tags disponiveis (DES_NUM sempre incluido, revisoes compactadas)
-;; ELEMENTO_TITULO é excluído pois é campo calculado (não exportável)
 (defun GetAllAvailableTags ( / doc found blk allTags tag)
   (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
   (setq allTags '())
@@ -592,9 +538,7 @@
           (progn
             (foreach att (vlax-invoke blk 'GetAttributes)
               (setq tag (strcase (vla-get-TagString att)))
-              ;; Excluir revisoes individuais e ELEMENTO_TITULO (calculado)
               (if (and (not (wcmatch tag "REV_?,DATA_?,DESC_?"))
-                       (/= tag "ELEMENTO_TITULO")
                        (not (member tag allTags)))
                 (setq allTags (cons tag allTags))
               )
@@ -695,9 +639,8 @@
   ;; Definir tags a exportar
   (if customTags
     (setq tags customTags)
-    ;; Default: DWG_SOURCE, TIPO, DES_NUM, ELEMENTO, TITULO, REVISAO_ATUAL (3 colunas), ID_CAD
-    ;; NOTA: ELEMENTO_TITULO é excluído pois é campo calculado (usa-se ELEMENTO e TITULO separados)
-    (setq tags '("DWG_SOURCE" "TIPO" "DES_NUM" "ELEMENTO" "TITULO" "REVISAO_ATUAL" "ID_CAD"))
+    ;; Default: DWG_SOURCE, TIPO, DES_NUM, TITULO, REVISAO_ATUAL (3 colunas), ID_CAD
+    (setq tags '("DWG_SOURCE" "TIPO" "DES_NUM" "TITULO" "REVISAO_ATUAL" "ID_CAD"))
   )
   
   ;; Encontrar índice de DES_NUM para validação de duplicados
@@ -1574,58 +1517,10 @@
 (defun Run_GenerateCSV ( / doc path dwgName defaultName csvFile fileDes layoutList dataList sortMode sortOrder valTipo valNum valTit maxRev revLetra revData revDesc valHandle duplicates continueExport userChoice dateErrors allDateErrors layName) (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) (setq path (getvar "DWGPREFIX")) (setq dwgName (GetDWGName)) (princ "\nA recolher dados (Ignorando TEMPLATE)... ") (setq dataList '()) (setq allDateErrors "") (setq layoutList (GetLayoutsRaw doc)) (foreach lay layoutList (vlax-for blk (vla-get-Block lay) (if (IsTargetBlock blk) (progn (setq valTipo (CleanCSV (GetAttValue blk "TIPO"))) (setq valNum (CleanCSV (GetAttValue blk "DES_NUM"))) (setq valTit (CleanCSV (GetAttValue blk "TITULO"))) (setq maxRev (GetMaxRevision blk)) (setq revLetra (CleanCSV (car maxRev))) (setq revData (CleanCSV (cadr maxRev))) (setq revDesc (CleanCSV (caddr maxRev))) (setq valHandle (vla-get-Handle blk)) (setq layName (vla-get-Name lay)) (setq dateErrors (ValidateRevisionDates blk)) (if dateErrors (setq allDateErrors (strcat allDateErrors "Des " valNum " (" layName "): " dateErrors "\n"))) (setq dataList (cons (list dwgName valTipo valNum valTit revLetra revData revDesc valHandle layName) dataList)))))) (setq duplicates (FindDuplicateDES_NUM dataList)) (setq continueExport T) (if duplicates (progn (alert (strcat "AVISO: DES_NUM DUPLICADOS!\n\n" duplicates)) (initget "Sim Nao") (setq userChoice (getkword "\nContinuar exportação? [Sim/Nao] <Nao>: ")) (if (or (null userChoice) (= userChoice "Nao")) (setq continueExport nil)))) (if (and continueExport (/= allDateErrors "")) (progn (alert (strcat "AVISO: DATAS DE REVISÃO INCOERENTES!\n\n" allDateErrors)) (initget "Sim Nao") (setq userChoice (getkword "\nContinuar exportação? [Sim/Nao] <Sim>: ")) (if (= userChoice "Nao") (setq continueExport nil)))) (if continueExport (progn (setq defaultName (strcat path dwgName "_Lista.csv")) (setq csvFile (getfiled "Guardar Lista CSV" defaultName "csv" 1)) (if csvFile (progn (initget "1 2") (setq sortMode (getkword "\nOrdenar por? [1] Tipo / [2] Número <2>: ")) (if (not sortMode) (setq sortMode "2")) (cond ((= sortMode "1") (setq dataList (vl-sort dataList '(lambda (a b) (if (= (strcase (nth 1 a)) (strcase (nth 1 b))) (< (atoi (nth 2 a)) (atoi (nth 2 b))) (< (strcase (nth 1 a)) (strcase (nth 1 b)))))))) ((= sortMode "2") (setq dataList (vl-sort dataList '(lambda (a b) (< (atoi (nth 2 a)) (atoi (nth 2 b)))))))) (setq fileDes (open csvFile "w")) (if fileDes (progn (write-line "DWG_SOURCE;TIPO;NÚMERO DE DESENHO;TITULO;REVISAO;DATA;DESCRICAO;ID_CAD" fileDes) (foreach row dataList (write-line (strcat (nth 0 row) ";" (nth 1 row) ";" (nth 2 row) ";" (nth 3 row) ";" (nth 4 row) ";" (nth 5 row) ";" (nth 6 row) ";" (nth 7 row)) fileDes)) (close fileDes) (alert (strcat "Sucesso! Ficheiro criado:\n" csvFile))) (alert "Erro: Ficheiro aberto?"))) (princ "\nCancelado."))) (princ "\nExportação cancelada.")) (princ))
 ;; Função auxiliar: encontra DES_NUM duplicados e retorna string formatada
 (defun FindDuplicateDES_NUM (dataList / numList duplicates item num layName seen result) (setq seen '() duplicates '()) (foreach item dataList (setq num (nth 2 item)) (setq layName (nth 8 item)) (if (assoc num seen) (setq duplicates (cons (strcat "DES_NUM " num " -> Layout: " layName) duplicates)) (setq seen (cons (cons num layName) seen)))) (if duplicates (progn (setq result "") (foreach dup (reverse duplicates) (setq result (strcat result dup "\n"))) result) nil))
-;; Run_ImportCSV - Importar CSV com formato: DWG_SOURCE;TIPO;DES_NUM;ELEMENTO;TITULO;REV;DATA;DESC;ID_CAD
-(defun Run_ImportCSV ( / doc path defaultName csvFile fileDes line parts valDwgSource valTipo valNum valElemento valTit valRev valData valDesc valHandle countUpdates) 
-  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) 
-  (setq path (getvar "DWGPREFIX")) 
-  (setq csvFile (getfiled "Selecione o ficheiro CSV" path "csv" 4)) 
-  (if (and csvFile (findfile csvFile)) 
-    (progn 
-      (setq fileDes (open csvFile "r")) 
-      (if fileDes 
-        (progn 
-          (princ "\nA processar CSV... ") 
-          (setq countUpdates 0) 
-          (read-line fileDes) ;; Skip header
-          (while (setq line (read-line fileDes)) 
-            (setq parts (StrSplit line ";")) 
-            ;; Formato: DWG_SOURCE;TIPO;DES_NUM;ELEMENTO;TITULO;REV;DATA;DESC;ID_CAD (9 colunas)
-            (if (>= (length parts) 9) 
-              (progn 
-                (setq valDwgSource (nth 0 parts)) 
-                (setq valTipo (nth 1 parts)) 
-                (setq valNum (nth 2 parts)) 
-                (setq valElemento (nth 3 parts))
-                (setq valTit (nth 4 parts)) 
-                (setq valRev (nth 5 parts)) 
-                (setq valData (nth 6 parts)) 
-                (setq valDesc (nth 7 parts)) 
-                (setq valHandle (nth 8 parts)) 
-                (if (and valHandle (/= valHandle "")) 
-                  (if (UpdateBlockByHandleAndData valHandle valTipo valNum valElemento valTit valRev valData valDesc) 
-                    (setq countUpdates (1+ countUpdates))
-                  )
-                )
-              )
-            )
-          ) 
-          (close fileDes) 
-          (vla-Regen doc acActiveViewport) 
-          (if (> countUpdates 0) 
-            (WriteLog (strcat "IMPORTAR CSV: " (itoa countUpdates) " desenhos atualizados"))
-          ) 
-          (alert (strcat "Concluído!\n" (itoa countUpdates) " desenhos atualizados."))
-        ) 
-        (alert "Erro ao abrir ficheiro.")
-      )
-    ) 
-    (princ "\nCancelado.")
-  ) 
-  (princ)
-)
+(defun Run_ImportCSV ( / doc path defaultName csvFile fileDes line parts valDwgSource valTipo valNum valTit valRev valData valDesc valHandle countUpdates) (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) (setq path (getvar "DWGPREFIX")) (setq csvFile (getfiled "Selecione o ficheiro CSV" path "csv" 4)) (if (and csvFile (findfile csvFile)) (progn (setq fileDes (open csvFile "r")) (if fileDes (progn (princ "\nA processar CSV... ") (setq countUpdates 0) (read-line fileDes) (while (setq line (read-line fileDes)) (setq parts (StrSplit line ";")) (if (>= (length parts) 8) (progn (setq valDwgSource (nth 0 parts)) (setq valTipo (nth 1 parts)) (setq valNum (nth 2 parts)) (setq valTit (nth 3 parts)) (setq valRev (nth 4 parts)) (setq valData (nth 5 parts)) (setq valDesc (nth 6 parts)) (setq valHandle (nth 7 parts)) (if (and valHandle (/= valHandle "")) (if (UpdateBlockByHandleAndData valHandle valTipo valNum valTit valRev valData valDesc) (setq countUpdates (1+ countUpdates))))))) (close fileDes) (vla-Regen doc acActiveViewport) (if (> countUpdates 0) (WriteLog (strcat "IMPORTAR CSV: " (itoa countUpdates) " desenhos atualizados"))) (alert (strcat "Concluído!\n" (itoa countUpdates) " desenhos atualizados."))) (alert "Erro ao abrir ficheiro."))) (princ "\nCancelado.")) (princ))
 (defun CleanCSV (str) (if (= str nil) (setq str "")) (setq str (vl-string-translate ";" "," str)) (vl-string-trim " \"" str))
 (defun StrSplit (str del / pos len lst) (setq len (strlen del)) (while (setq pos (vl-string-search del str)) (setq lst (cons (vl-string-trim " " (substr str 1 pos)) lst) str (substr str (+ 1 pos len)))) (reverse (cons (vl-string-trim " " str) lst)))
-(defun UpdateBlockByHandleAndData (handle tipo num elemento tit rev dataStr descStr / ename obj atts revTag dataTag descTag success) 
+(defun UpdateBlockByHandleAndData (handle tipo num tit rev dataStr descStr / ename obj atts revTag dataTag descTag success) 
   (setq success nil) 
   (if (not (vl-catch-all-error-p (vl-catch-all-apply 'handent (list handle)))) 
     (setq ename (handent handle))
@@ -1636,8 +1531,7 @@
         (UpdateSingleTag handle "TIPO" tipo) 
         (UpdateSingleTag handle "DES_NUM" num)
         (UpdateTabName handle) ;; Auto-atualizar tab quando DES_NUM muda
-        (UpdateSingleTag handle "ELEMENTO" elemento) ;; UpdateSingleTag chama UpdateElementoTitulo
-        (UpdateSingleTag handle "TITULO" tit) ;; UpdateSingleTag chama UpdateElementoTitulo
+        (UpdateSingleTag handle "TITULO" tit) 
         (if (and rev (/= rev "") (/= rev "-")) 
           (progn 
             (setq revTag (strcat "REV_" rev)) 
@@ -1686,8 +1580,8 @@
           ((and (> userIdx 0) (<= userIdx i))
             (setq selectedHandle (car (nth (1- userIdx) drawList)))
             (setq desNum (cadr (nth (1- userIdx) drawList)))
-            (initget "1 2 3")
-            (setq field (getkword "\nAtualizar? [1] Tipo / [2] Elemento / [3] Titulo: "))
+            (initget "1 2")
+            (setq field (getkword "\nAtualizar? [1] Tipo / [2] Titulo: "))
             (cond
               ((= field "1")
                 (UpdateSingleTag selectedHandle "TIPO" (getstring T "\nNovo TIPO: "))
@@ -1695,11 +1589,6 @@
                 (WriteLog (strcat "MODIFICAR: Des " desNum " - TIPO alterado"))
               )
               ((= field "2")
-                (UpdateSingleTag selectedHandle "ELEMENTO" (getstring T "\nNovo ELEMENTO: "))
-                (vla-Regen doc acActiveViewport)
-                (WriteLog (strcat "MODIFICAR: Des " desNum " - ELEMENTO alterado"))
-              )
-              ((= field "3")
                 (UpdateSingleTag selectedHandle "TITULO" (getstring T "\nNovo TITULO: "))
                 (vla-Regen doc acActiveViewport)
                 (WriteLog (strcat "MODIFICAR: Des " desNum " - TITULO alterado"))
@@ -1785,36 +1674,13 @@
   )
 )
 (defun ReleaseObject (obj) (if (and obj (not (vlax-object-released-p obj))) (vlax-release-object obj)))
-;; NOTA: IsTargetBlock, GetAttValue, UpdateSingleTag, UpdateBlockByHandle estão definidos no início do ficheiro
-;; ApplyGlobalValue - Aplica valor a tag específico em todos os blocos
-;; Quando ELEMENTO ou TITULO são alterados, recalcula ELEMENTO_TITULO
-(defun ApplyGlobalValue (targetTag targetVal / doc blkHandle) 
-  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) 
-  (vlax-for lay (vla-get-Layouts doc) 
-    (if (/= (vla-get-ModelType lay) :vlax-true) 
-      (vlax-for blk (vla-get-Block lay) 
-        (if (IsTargetBlock blk) 
-          (progn
-            (foreach att (vlax-invoke blk 'GetAttributes) 
-              (if (= (strcase (vla-get-TagString att)) targetTag) 
-                (vla-put-TextString att targetVal)
-              )
-            )
-            ;; Se ELEMENTO ou TITULO foi alterado, recalcular ELEMENTO_TITULO
-            (if (or (= targetTag "ELEMENTO") (= targetTag "TITULO"))
-              (progn
-                (setq blkHandle (vla-get-Handle blk))
-                (UpdateElementoTitulo blkHandle)
-              )
-            )
-          )
-        )
-      )
-    )
-  ) 
-  (vla-Regen doc acActiveViewport)
-)
-;; NOTA: GetDrawingList e GetExampleTags estão definidos no início do ficheiro (linhas ~100-150)
+(defun IsTargetBlock (blk) (and (= (vla-get-ObjectName blk) "AcDbBlockReference") (= (strcase (vla-get-EffectiveName blk)) "LEGENDA_JSJ_V1")))
+(defun GetAttValue (blk tag / atts val) (setq atts (vlax-invoke blk 'GetAttributes) val "") (foreach att atts (if (= (strcase (vla-get-TagString att)) (strcase tag)) (setq val (vla-get-TextString att)))) val)
+(defun UpdateSingleTag (handle tag val / ename obj atts) (if (not (vl-catch-all-error-p (vl-catch-all-apply 'handent (list handle)))) (setq ename (handent handle))) (if (and ename (setq obj (vlax-ename->vla-object ename))) (progn (setq atts (vlax-invoke obj 'GetAttributes)) (foreach att atts (if (= (strcase (vla-get-TagString att)) (strcase tag)) (vla-put-TextString att val))) (vla-Update obj))))
+(defun UpdateBlockByHandle (handle pairList / ename obj atts tagVal foundVal) (if (not (vl-catch-all-error-p (vl-catch-all-apply 'handent (list handle)))) (setq ename (handent handle))) (if (and ename (setq obj (vlax-ename->vla-object ename))) (if (and (= (vla-get-ObjectName obj) "AcDbBlockReference") (= (vla-get-HasAttributes obj) :vlax-true)) (foreach att (vlax-invoke obj 'GetAttributes) (setq tagVal (strcase (vla-get-TagString att)) foundVal (cdr (assoc tagVal pairList))) (if foundVal (vla-put-TextString att foundVal))))))
+(defun ApplyGlobalValue (targetTag targetVal / doc) (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) (vlax-for lay (vla-get-Layouts doc) (if (/= (vla-get-ModelType lay) :vlax-true) (vlax-for blk (vla-get-Block lay) (if (IsTargetBlock blk) (foreach att (vlax-invoke blk 'GetAttributes) (if (= (strcase (vla-get-TagString att)) targetTag) (vla-put-TextString att targetVal))))))) (vla-Regen doc acActiveViewport))
+(defun GetDrawingList ( / doc listOut atts desNum tipo name) (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)) listOut '()) (vlax-for lay (vla-get-Layouts doc) (setq name (strcase (vla-get-Name lay))) (if (and (/= (vla-get-ModelType lay) :vlax-true) (/= name "TEMPLATE")) (vlax-for blk (vla-get-Block lay) (if (IsTargetBlock blk) (progn (setq desNum "0" tipo "ND") (foreach att (vlax-invoke blk 'GetAttributes) (if (= (strcase (vla-get-TagString att)) "DES_NUM") (setq desNum (vla-get-TextString att))) (if (= (strcase (vla-get-TagString att)) "TIPO") (setq tipo (vla-get-TextString att)))) (setq listOut (cons (list (vla-get-Handle blk) desNum (vla-get-Name lay) tipo) listOut))))))) (setq listOut (vl-sort listOut '(lambda (a b) (< (atoi (cadr a)) (atoi (cadr b)))))) listOut)
+(defun GetExampleTags ( / doc tagList found atts tag) (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)) tagList '() found nil) (vlax-for lay (vla-get-Layouts doc) (if (not found) (vlax-for blk (vla-get-Block lay) (if (IsTargetBlock blk) (progn (foreach att (vlax-invoke blk 'GetAttributes) (setq tag (strcase (vla-get-TagString att))) (if (and (/= tag "DES_NUM") (/= tag "FASE") (/= tag "R") (not (wcmatch tag "REV_?,DATA_?,DESC_?"))) (setq tagList (cons tag tagList)))) (setq found T)))))) (vl-sort tagList '<))
 (defun FormatNum (n) (if (< n 10) (strcat "0" (itoa n)) (itoa n)))
 (defun EscapeJSON (str / i char result len) (setq result "" len (strlen str) i 1) (while (<= i len) (setq char (substr str i 1)) (cond ((= char "\\") (setq result (strcat result "\\\\"))) ((= char "\"") (setq result (strcat result "\\\""))) (t (setq result (strcat result char)))) (setq i (1+ i))) result)
 (defun StringUnescape (str / result i char nextChar len) (setq result "" len (strlen str) i 1) (while (<= i len) (setq char (substr str i 1)) (if (and (= char "\\") (< i len)) (progn (setq nextChar (substr str (1+ i) 1)) (cond ((= nextChar "\\") (setq result (strcat result "\\"))) ((= nextChar "\"") (setq result (strcat result "\""))) (t (setq result (strcat result char)))) (setq i (1+ i))) (setq result (strcat result char))) (setq i (1+ i))) result)

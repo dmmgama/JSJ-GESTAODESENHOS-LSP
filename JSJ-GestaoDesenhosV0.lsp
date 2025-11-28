@@ -1,5 +1,5 @@
 ;; ============================================================================
-;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V39.1 - ELEMENTO_TITULO Fix)
+;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V39.2 - ELEMENTO_TITULO Fix2)
 ;; ============================================================================
 
 ;; Variáveis globais (persistem durante sessão)
@@ -33,14 +33,12 @@
           (vla-put-TextString att val))) 
       (vla-Update obj)
       ;; Se alterou ELEMENTO ou TITULO, recalcular ELEMENTO_TITULO
-      ;; Passa o novo valor para evitar ler valor desatualizado
-      (cond
-        ((= (strcase tag) "ELEMENTO")
-          (UpdateElementoTitulo handle val nil)  ;; novo elemento, titulo=nil (ler do bloco)
-        )
-        ((= (strcase tag) "TITULO")
-          (UpdateElementoTitulo handle nil val)  ;; elemento=nil (ler do bloco), novo titulo
-        )
+      ;; Passa o tag alterado e o novo valor
+      (if (= (strcase tag) "ELEMENTO")
+        (UpdateElementoTitulo handle "ELEMENTO" val)
+      )
+      (if (= (strcase tag) "TITULO")
+        (UpdateElementoTitulo handle "TITULO" val)
       )
     )
   )
@@ -56,23 +54,36 @@
 ;;   - Só TITULO: "<TITULO>"
 ;;   - Ambos vazios: ""
 ;; UpdateElementoTitulo - Recalcula ELEMENTO_TITULO
-;; Parâmetros opcionais: novoElemento e novoTitulo
-;; Se nil, lê do bloco; se string, usa o valor passado
-(defun UpdateElementoTitulo (handle novoElemento novoTitulo / ename obj elemento titulo resultado)
+;; Parâmetros: changedTag = "ELEMENTO" ou "TITULO" ou nil
+;;            newValue = novo valor do tag alterado
+;; Se changedTag=nil, lê ambos do bloco
+(defun UpdateElementoTitulo (handle changedTag newValue / ename obj elemento titulo resultado)
   (if (not (vl-catch-all-error-p (vl-catch-all-apply 'handent (list handle))))
     (setq ename (handent handle))
   )
   (if (and ename (setq obj (vlax-ename->vla-object ename)))
     (progn
-      ;; Usar valor passado ou ler do bloco
-      (if novoElemento
-        (setq elemento (vl-string-trim " " novoElemento))
-        (setq elemento (vl-string-trim " " (GetAttValue obj "ELEMENTO")))
+      ;; Determinar valores de ELEMENTO e TITULO
+      (cond
+        ((= changedTag "ELEMENTO")
+          ;; ELEMENTO foi alterado - usar newValue, ler TITULO do bloco
+          (setq elemento (if newValue (vl-string-trim " " newValue) ""))
+          (setq titulo (vl-string-trim " " (GetAttValue obj "TITULO")))
+        )
+        ((= changedTag "TITULO")
+          ;; TITULO foi alterado - ler ELEMENTO do bloco, usar newValue
+          (setq elemento (vl-string-trim " " (GetAttValue obj "ELEMENTO")))
+          (setq titulo (if newValue (vl-string-trim " " newValue) ""))
+        )
+        (T
+          ;; Ambos do bloco
+          (setq elemento (vl-string-trim " " (GetAttValue obj "ELEMENTO")))
+          (setq titulo (vl-string-trim " " (GetAttValue obj "TITULO")))
+        )
       )
-      (if novoTitulo
-        (setq titulo (vl-string-trim " " novoTitulo))
-        (setq titulo (vl-string-trim " " (GetAttValue obj "TITULO")))
-      )
+      
+      ;; DEBUG - mostrar valores (remover depois)
+      (princ (strcat "\n[DEBUG] ELEMENTO='" elemento "' TITULO='" titulo "'"))
       
       ;; Construir resultado baseado nas regras
       (cond
@@ -90,6 +101,8 @@
         )
       )
       
+      (princ (strcat " -> ELEMENTO_TITULO='" resultado "'"))
+      
       ;; Gravar ELEMENTO_TITULO diretamente (sem recursao)
       (foreach att (vlax-invoke obj 'GetAttributes)
         (if (= (strcase (vla-get-TagString att)) "ELEMENTO_TITULO")
@@ -99,6 +112,7 @@
       (vla-Update obj)
     )
   )
+)
 )
 
 (defun FormatNum (n) 
@@ -368,16 +382,18 @@
     (princ "\n   3. Alterar Desenho Individual")
     (princ "\n   4. Definir Utilizador")
     (princ "\n   5. Alterar Fase de Projeto")
+    (princ "\n   6. Alterar ELEMENTO (Global)")
     (princ "\n   9. Navegar (ver desenho)")
     (princ "\n   0. Voltar")
-    (initget "1 2 3 4 5 9 0")
-    (setq optSub (getkword "\n   Opcao [1/2/3/4/5/9/0]: "))
+    (initget "1 2 3 4 5 6 9 0")
+    (setq optSub (getkword "\n   Opcao [1/2/3/4/5/6/9/0]: "))
     (cond
       ((= optSub "1") (Menu_EmitirRevisao))
       ((= optSub "2") (Run_GlobalVars_Selective_V29))
       ((= optSub "3") (ProcessManualReview))
       ((= optSub "4") (SetCurrentUser))
       ((= optSub "5") (AlterarFaseProjeto))
+      ((= optSub "6") (AlterarElementoGlobal))
       ((= optSub "9") (ModoNavegacao))
       ((= optSub "0") (setq loopSub nil))
       ((= optSub nil) (setq loopSub nil))
@@ -495,6 +511,80 @@
       (alert (strcat "Fase de Projeto alterada!\n\nNova Fase: " newFase))
     )
     (princ "\nCancelado - fase vazia.")
+  )
+  (princ)
+)
+
+;; ============================================================================
+;; ALTERAR ELEMENTO GLOBAL - Altera ELEMENTO em múltiplos desenhos
+;; ============================================================================
+(defun AlterarElementoGlobal ( / doc newElemento targets targetList count desNum blkHandle currentElemento)
+  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
+  
+  (princ "\n\n=== ALTERAR ELEMENTO (GLOBAL) ===")
+  (princ "\nEste campo aparece no ELEMENTO_TITULO junto com o titulo.")
+  (princ "\nExemplo: 'Estabilidade' ou 'Estruturas Betao'")
+  
+  ;; Mostrar valor atual do primeiro desenho encontrado
+  (vlax-for lay (vla-get-Layouts doc)
+    (if (and (not currentElemento)
+             (/= (vla-get-ModelType lay) :vlax-true)
+             (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
+      (vlax-for blk (vla-get-Block lay)
+        (if (and (not currentElemento) (IsTargetBlock blk))
+          (setq currentElemento (GetAttValue blk "ELEMENTO"))
+        )
+      )
+    )
+  )
+  (if currentElemento
+    (princ (strcat "\n\nValor atual: '" currentElemento "'"))
+  )
+  
+  (setq newElemento (getstring T "\nNovo ELEMENTO: "))
+  
+  (if (or newElemento (= newElemento ""))
+    (progn
+      (princ "\n\n--> Aplicar a quais desenhos?")
+      (princ "\n    Enter = TODOS")
+      (princ "\n    Lista = 1,2,5 ou 1-10")
+      (setq targets (getstring T "\nDesenhos: "))
+      
+      (setq targetList nil)
+      (if (/= targets "")
+        (setq targetList (StrSplit targets ","))
+      )
+      
+      (princ "\nA aplicar ELEMENTO... ")
+      (setq count 0)
+      
+      (vlax-for lay (vla-get-Layouts doc)
+        (if (and (/= (vla-get-ModelType lay) :vlax-true)
+                 (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
+          (vlax-for blk (vla-get-Block lay)
+            (if (IsTargetBlock blk)
+              (progn
+                (setq desNum (GetAttValue blk "DES_NUM"))
+                (setq blkHandle (vla-get-Handle blk))
+                
+                (if (or (null targetList)
+                        (IsNumberInList desNum targetList))
+                  (progn
+                    ;; Usar UpdateSingleTag que automaticamente chama UpdateElementoTitulo
+                    (UpdateSingleTag blkHandle "ELEMENTO" newElemento)
+                    (setq count (1+ count))
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+      
+      (vla-Regen doc acActiveViewport)
+      (WriteLog (strcat "ELEMENTO GLOBAL: '" newElemento "' em " (itoa count) " desenhos"))
+      (alert (strcat "Concluído!\n\nELEMENTO = '" newElemento "'\nAtualizado em " (itoa count) " desenhos.\n\nO campo ELEMENTO_TITULO foi recalculado automaticamente."))
+    )
   )
   (princ)
 )
@@ -1822,7 +1912,7 @@
             (if (= targetTag "ELEMENTO")
               (progn
                 (setq blkHandle (vla-get-Handle blk))
-                (UpdateElementoTitulo blkHandle targetVal nil)
+                (UpdateElementoTitulo blkHandle "ELEMENTO" targetVal)
               )
             )
           )

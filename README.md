@@ -2,7 +2,7 @@
 
 **Sistema LISP para gestão de legendas de desenhos de estruturas em AutoCAD**
 
-**Versão atual: V37.2** | Fase 2 em desenvolvimento
+**Versão atual: V39.5** | Fase 2 em desenvolvimento
 
 ---
 
@@ -61,7 +61,7 @@ O sistema automatiza a gestão de legendas em ficheiros AutoCAD com dezenas de l
 
 | Ficheiro | Descrição |
 |----------|-----------|
-| `JSJ-GestaoDesenhosV0.lsp` | Código principal LISP (V35.1) |
+| `JSJ-GestaoDesenhosV0.lsp` | Código principal LISP (V39.5) |
 | `Legenda.dwg` | Template com bloco LEGENDA_JSJ_V1 |
 | `WorkFiles/Claude Project Files/_REF_ATTRIBUTES.md` | Dicionário de atributos do bloco |
 | `WorkFiles/Claude Project Files/_REF_FUNCTIONS.md` | Documentação das funções LISP |
@@ -101,6 +101,7 @@ Comando: `GESTAODESENHOSJSJ`
 | **3** | Alterar Desenho Individual | Edita TIPO/TITULO de um desenho |
 | **4** | Definir Utilizador | Define nome para logging |
 | **5** | Alterar Fase de Projeto | Altera fase, limpa revisões, atualiza data |
+| **6** | Alterar ELEMENTO (Global) | Altera ELEMENTO em TODOS ou seleção (recalcula ELEMENTO_TITULO) |
 | **9** | Navegar | Ver layouts |
 | **0** | Voltar | Regressa ao menu principal |
 
@@ -128,11 +129,17 @@ Comando: `GESTAODESENHOSJSJ`
 | `PROJETOU` | "DAVID GAMA" |
 | `ESCALAS` | "1:50" |
 
-#### Campos Específicos (variam por desenho)
+#### Campos Variáveis (podem ser globais OU específicos)
 | Tag | Exemplo | Notas |
 |-----|---------|-------|
 | `TIPO` | "PLANTA" / "CORTE" | Tipologia do desenho |
-| `TITULO` | "FUNDAÇÕES BLOCO A" | Título único |
+| `ELEMENTO` | "LAJES" / "PILARES" | Elemento estrutural (invisível) |
+
+#### Campos Específicos (sempre únicos por desenho)
+| Tag | Exemplo | Notas |
+|-----|---------|-------|
+| `TITULO` | "PISO 1" / "FUNDAÇÕES BLOCO A" | Título único (invisível) |
+| `ELEMENTO_TITULO` | "LAJES - PISO 1" | **Auto-calculado** de ELEMENTO + TITULO (visível) |
 | `DES_NUM` | "01", "02" | Número (2 dígitos) |
 | `DATA` | "NOVEMBRO 2025" | Data primeira emissão |
 
@@ -174,9 +181,11 @@ A tabela de revisões preenche-se de **baixo para cima**:
 | ID | Tarefa | Estado |
 |----|--------|--------|
 | 2.1 | "Emitir Revisão" (TODOS ou seleção) | ✅ |
-| 2.2 | Verificar escala Viewport vs Legenda | ⬜ |
-| 2.3 | Batch Rename: Tab = DES_NUM_TIPO | ⬜ |
-| 2.4 | Relatório de desenhos | ⬜ |
+| 2.2 | ELEMENTO_TITULO: Auto-cálculo ELEMENTO + TITULO | ✅ V39.5 |
+| 2.3 | Alterar ELEMENTO (Global) com seleção | ✅ V39.5 |
+| 2.4 | Verificar escala Viewport vs Legenda | ⬜ |
+| 2.5 | Batch Rename: Tab = DES_NUM_TIPO | ⬜ |
+| 2.6 | Relatório de desenhos | ⬜ |
 
 ### FASE 3: Enterprise (Multi-DWG + Excel)
 | ID | Tarefa | Estado |
@@ -189,9 +198,28 @@ A tabela de revisões preenche-se de **baixo para cima**:
 
 ---
 
-## ✨ Funcionalidades V37
+## ✨ Funcionalidades Destacadas
 
-### Emitir Revisão (2.1) ✅
+### ELEMENTO_TITULO: Atributo Auto-Calculado (V39.5) ✅
+- Novo campo **ELEMENTO_TITULO** combina automaticamente ELEMENTO + " - " + TITULO
+- **ELEMENTO** e **TITULO** são invisíveis (só para edição)
+- **ELEMENTO_TITULO** é visível na legenda (só leitura)
+- **Lógica de cálculo:**
+  - Ambos preenchidos: `"LAJES - PISO 1"`
+  - Só ELEMENTO: `"LAJES"`
+  - Só TITULO: `"PISO 1"`
+  - Ambos vazios: `""`
+- Auto-atualiza ao modificar ELEMENTO ou TITULO
+- **CSV:** Exporta ELEMENTO e TITULO separados (ELEMENTO_TITULO não exportável)
+
+### Alterar ELEMENTO (Global) (V39.5) ✅
+- Menu opção **6**: Edição dedicada do campo ELEMENTO
+- Permite alterar em **TODOS** os desenhos ou **seleção** (ex: `1,3-5,8`)
+- Mostra valor atual de cada desenho antes de aplicar
+- Recalcula automaticamente **ELEMENTO_TITULO** após alteração
+- Ideal para padronizar elemento estrutural em múltiplos desenhos mantendo TITULOs únicos
+
+### Emitir Revisão (V37) ✅
 - Emite nova revisão em **TODOS** os desenhos ou **seleção**
 - Seleção flexível: `1,3,5` (individual) ou `2-5` (range) ou `1,3-5,8` (misto)
 - Data automática (hoje) como default
@@ -205,11 +233,12 @@ A tabela de revisões preenche-se de **baixo para cima**:
 - Útil para transição entre fases (Anteprojeto → Projeto de Execução)
 
 ### CSV Configurável (V37) ✅
-- **Exportação Default:** Colunas padrão (DWG_SOURCE, TIPO, DES_NUM, TITULO, REVISAO_ATUAL, ID_CAD)
+- **Exportação Default:** Colunas padrão (DWG_SOURCE, TIPO, DES_NUM, ELEMENTO, TITULO, REVISAO_ATUAL, ID_CAD)
 - **Exportação Customizada:** Seleciona colunas a exportar (ex: `1,3,5` ou `2-8`)
 - **Reordenação:** Opção de alterar ordem das colunas no CSV
 - **Campos Obrigatórios:** DES_NUM e ID_CAD sempre incluídos automaticamente
 - **Campo Especial:** REVISAO_ATUAL expande-se em 3 colunas (Nº, Data, Desc)
+- **Nota V39:** ELEMENTO e TITULO são exportados separadamente; ELEMENTO_TITULO é campo calculado (não exportável)
 
 ### Modo Navegação (V35) ✅
 - Opção **9** em qualquer menu permite navegar pelos layouts
@@ -262,4 +291,4 @@ Projeto interno JSJ Engenharia.
 ## 📞 Contacto
 
 Desenvolvido para gestão de projetos de estruturas.
-Versão atual: **V37.2**
+Versão atual: **V39.5** (ELEMENTO_TITULO auto-calculado)

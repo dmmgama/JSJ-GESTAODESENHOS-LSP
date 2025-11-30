@@ -5,7 +5,7 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 
-from db import get_connection, criar_tabelas, get_all_desenhos, get_revisoes_by_desenho_id, get_desenho_by_layout, get_dwg_list, delete_all_desenhos, delete_desenhos_by_dwg, get_db_stats, get_all_desenhos_with_revisoes
+from db import get_connection, criar_tabelas, get_all_desenhos, get_revisoes_by_desenho_id, get_desenho_by_layout, get_dwg_list, delete_all_desenhos, delete_desenhos_by_dwg, delete_desenhos_by_tipo, delete_desenhos_by_elemento, delete_desenho_by_layout, get_db_stats, get_all_desenhos_with_revisoes, get_unique_tipos, get_unique_elementos, get_all_layout_names
 from json_importer import import_all_json
 from csv_importer import import_all_csv, import_single_csv
 from lpp_builder import build_lpp_from_db
@@ -143,24 +143,103 @@ if db_stats['dwg_list']:
     dwg_info = ", ".join([f"{d['dwg_name']}({d['count']})" for d in db_stats['dwg_list']])
     st.sidebar.caption(f"📁 {dwg_info}")
 
-# Delete all button
+# Opções de limpeza da DB
 if db_stats['total_desenhos'] > 0:
-    if st.sidebar.button("🗑️ Apagar TODA a DB", type="secondary", use_container_width=True):
-        st.session_state['confirm_delete_all'] = True
-
-    if st.session_state.get('confirm_delete_all', False):
-        st.sidebar.warning(f"⚠️ Apagar TODOS os {db_stats['total_desenhos']} desenhos?")
+    st.sidebar.markdown("**🗑️ Limpar Base de Dados**")
+    
+    # Escolha do tipo de limpeza
+    delete_type = st.sidebar.selectbox(
+        "Apagar por:",
+        ["Escolher...", "Tudo", "Por DWG", "Por Tipo", "Por Elemento", "Desenho Individual"],
+        key="delete_type"
+    )
+    
+    if delete_type == "Tudo":
+        if st.sidebar.button("⚠️ Apagar TODA a DB", type="secondary", use_container_width=True):
+            st.session_state['confirm_delete'] = 'all'
+    
+    elif delete_type == "Por DWG":
+        conn = get_connection()
+        dwg_list = [d['dwg_name'] for d in get_dwg_list(conn)]
+        conn.close()
+        if dwg_list:
+            selected_dwg_del = st.sidebar.selectbox("Selecione DWG:", dwg_list, key="del_dwg")
+            if st.sidebar.button(f"🗑️ Apagar {selected_dwg_del}", use_container_width=True):
+                st.session_state['confirm_delete'] = ('dwg', selected_dwg_del)
+    
+    elif delete_type == "Por Tipo":
+        conn = get_connection()
+        tipos = get_unique_tipos(conn)
+        conn.close()
+        if tipos:
+            selected_tipo_del = st.sidebar.selectbox("Selecione Tipo:", tipos, key="del_tipo")
+            if st.sidebar.button(f"🗑️ Apagar tipo '{selected_tipo_del}'", use_container_width=True):
+                st.session_state['confirm_delete'] = ('tipo', selected_tipo_del)
+        else:
+            st.sidebar.info("Nenhum tipo encontrado")
+    
+    elif delete_type == "Por Elemento":
+        conn = get_connection()
+        elementos = get_unique_elementos(conn)
+        conn.close()
+        if elementos:
+            selected_elem_del = st.sidebar.selectbox("Selecione Elemento:", elementos, key="del_elem")
+            if st.sidebar.button(f"🗑️ Apagar elemento '{selected_elem_del}'", use_container_width=True):
+                st.session_state['confirm_delete'] = ('elemento', selected_elem_del)
+        else:
+            st.sidebar.info("Nenhum elemento encontrado")
+    
+    elif delete_type == "Desenho Individual":
+        conn = get_connection()
+        layouts = get_all_layout_names(conn)
+        conn.close()
+        if layouts:
+            selected_layout_del = st.sidebar.selectbox("Selecione Layout:", layouts, key="del_layout")
+            if st.sidebar.button(f"🗑️ Apagar '{selected_layout_del}'", use_container_width=True):
+                st.session_state['confirm_delete'] = ('layout', selected_layout_del)
+        else:
+            st.sidebar.info("Nenhum layout encontrado")
+    
+    # Confirmação de exclusão
+    if st.session_state.get('confirm_delete'):
+        delete_info = st.session_state['confirm_delete']
+        
+        if delete_info == 'all':
+            st.sidebar.error(f"⚠️ Apagar TODOS os {db_stats['total_desenhos']} desenhos?")
+        elif delete_info[0] == 'dwg':
+            st.sidebar.error(f"⚠️ Apagar todos os desenhos do DWG '{delete_info[1]}'?")
+        elif delete_info[0] == 'tipo':
+            st.sidebar.error(f"⚠️ Apagar todos os desenhos do tipo '{delete_info[1]}'?")
+        elif delete_info[0] == 'elemento':
+            st.sidebar.error(f"⚠️ Apagar todos os desenhos do elemento '{delete_info[1]}'?")
+        elif delete_info[0] == 'layout':
+            st.sidebar.error(f"⚠️ Apagar o layout '{delete_info[1]}'?")
+        
         col_yes, col_no = st.sidebar.columns(2)
         with col_yes:
-            if st.button("✅ Sim", key="yes_all"):
+            if st.button("✅ Confirmar", key="yes_delete"):
                 conn = get_connection()
-                deleted = delete_all_desenhos(conn)
+                deleted = 0
+                
+                if delete_info == 'all':
+                    deleted = delete_all_desenhos(conn)
+                elif delete_info[0] == 'dwg':
+                    deleted = delete_desenhos_by_dwg(conn, delete_info[1])
+                elif delete_info[0] == 'tipo':
+                    deleted = delete_desenhos_by_tipo(conn, delete_info[1])
+                elif delete_info[0] == 'elemento':
+                    deleted = delete_desenhos_by_elemento(conn, delete_info[1])
+                elif delete_info[0] == 'layout':
+                    deleted = delete_desenho_by_layout(conn, delete_info[1])
+                
                 conn.close()
-                st.session_state['confirm_delete_all'] = False
+                st.session_state['confirm_delete'] = None
+                st.sidebar.success(f"✅ {deleted} desenho(s) apagado(s)")
                 st.rerun()
+        
         with col_no:
-            if st.button("❌ Não", key="no_all"):
-                st.session_state['confirm_delete_all'] = False
+            if st.button("❌ Cancelar", key="no_delete"):
+                st.session_state['confirm_delete'] = None
                 st.rerun()
 
 st.sidebar.markdown("---")
@@ -302,12 +381,173 @@ else:
     view_cols = [col for col in view_cols if col in filtered_df.columns]
     edit_cols = [col for col in edit_cols if col in filtered_df.columns]
     
+    # ========================================
+    # ORDENAÇÃO (sempre visível, fora do modo edição)
+    # ========================================
+    st.markdown("---")
+    st.subheader("📊 Ordenação")
+    
+    # Colunas disponíveis para ordenação
+    sort_columns_available = {
+        'des_num': 'Nº Desenho',
+        'tipo_display': 'Tipo',
+        'elemento_key': 'Elemento',
+        'layout_name': 'Layout',
+        'r': 'Revisão'
+    }
+    
+    # Detectar se DES_NUM tem prefixos de tipo ou elemento
+    def has_prefix_pattern(df):
+        """Verifica se os DES_NUM têm padrão de prefixo tipo/elemento"""
+        if 'des_num' not in df.columns:
+            return False
+        des_nums = df['des_num'].dropna().astype(str).tolist()
+        with_prefix = sum(1 for d in des_nums if d and d[0].isalpha())
+        return with_prefix > len(des_nums) * 0.3
+    
+    has_prefixes = has_prefix_pattern(filtered_df)
+    
+    # Inicializar session_state para ordenação
+    if 'sort_criteria_1' not in st.session_state:
+        st.session_state.sort_criteria_1 = 'tipo_display' if has_prefixes else 'des_num'
+    if 'sort_criteria_2' not in st.session_state:
+        st.session_state.sort_criteria_2 = 'elemento_key'
+    if 'sort_values_order_1' not in st.session_state:
+        st.session_state.sort_values_order_1 = []
+    if 'sort_values_order_2' not in st.session_state:
+        st.session_state.sort_values_order_2 = []
+    
+    # 1º Critério
+    col_crit1, col_vals1 = st.columns([1, 2])
+    
+    with col_crit1:
+        if has_prefixes:
+            sort1_options = {k: v for k, v in sort_columns_available.items() if k != 'des_num'}
+            st.caption("⚠️ DES_NUM tem prefixos")
+        else:
+            sort1_options = sort_columns_available
+        
+        default_idx_1 = list(sort1_options.keys()).index(st.session_state.sort_criteria_1) if st.session_state.sort_criteria_1 in sort1_options else 0
+        
+        sort1_col = st.selectbox(
+            "1º Critério", 
+            list(sort1_options.keys()),
+            format_func=lambda x: sort1_options[x],
+            index=default_idx_1,
+            key="sort1_select"
+        )
+        st.session_state.sort_criteria_1 = sort1_col
+    
+    with col_vals1:
+        if sort1_col in filtered_df.columns:
+            unique_vals_1 = sorted(filtered_df[sort1_col].dropna().unique().tolist())
+            if unique_vals_1:
+                if set(st.session_state.sort_values_order_1) != set(unique_vals_1):
+                    st.session_state.sort_values_order_1 = unique_vals_1
+                
+                st.caption("📋 Ordem (selecione na ordem desejada):")
+                new_order_1 = st.multiselect(
+                    "Valores 1º critério",
+                    options=unique_vals_1,
+                    default=st.session_state.sort_values_order_1,
+                    key="order_vals_1",
+                    label_visibility="collapsed"
+                )
+                if new_order_1:
+                    remaining = [v for v in unique_vals_1 if v not in new_order_1]
+                    st.session_state.sort_values_order_1 = new_order_1 + remaining
+    
+    # 2º Critério
+    col_crit2, col_vals2 = st.columns([1, 2])
+    
+    with col_crit2:
+        sort2_options = {"": "(nenhum)"} | {k: v for k, v in sort_columns_available.items() if k != sort1_col}
+        
+        if st.session_state.sort_criteria_2 in sort2_options:
+            default_idx_2 = list(sort2_options.keys()).index(st.session_state.sort_criteria_2)
+        else:
+            default_idx_2 = 0
+        
+        sort2_col = st.selectbox(
+            "2º Critério",
+            list(sort2_options.keys()),
+            format_func=lambda x: sort2_options[x],
+            index=default_idx_2,
+            key="sort2_select"
+        )
+        st.session_state.sort_criteria_2 = sort2_col
+    
+    with col_vals2:
+        if sort2_col and sort2_col in filtered_df.columns:
+            unique_vals_2 = sorted(filtered_df[sort2_col].dropna().unique().tolist())
+            if unique_vals_2:
+                if set(st.session_state.sort_values_order_2) != set(unique_vals_2):
+                    st.session_state.sort_values_order_2 = unique_vals_2
+                
+                st.caption("📋 Ordem:")
+                new_order_2 = st.multiselect(
+                    "Valores 2º critério",
+                    options=unique_vals_2,
+                    default=st.session_state.sort_values_order_2,
+                    key="order_vals_2",
+                    label_visibility="collapsed"
+                )
+                if new_order_2:
+                    remaining = [v for v in unique_vals_2 if v not in new_order_2]
+                    st.session_state.sort_values_order_2 = new_order_2 + remaining
+    
+    # Construir lista de ordenação
+    sort_by = []
+    if sort1_col:
+        sort_by.append(sort1_col)
+    if sort2_col:
+        sort_by.append(sort2_col)
+    
+    # Aplicar ordenação ao DataFrame
+    def apply_custom_sort(df, sort_cols, order1, order2):
+        """Aplica ordenação personalizada ao DataFrame"""
+        if not sort_cols:
+            return df
+        
+        result_df = df.copy()
+        
+        # Aplicar ordenação em ordem inversa (último critério primeiro)
+        for i, col in enumerate(reversed(sort_cols)):
+            if col in result_df.columns:
+                if i == len(sort_cols) - 1 and order1:  # 1º critério
+                    order_map = {v: idx for idx, v in enumerate(order1)}
+                    result_df['_sort_key'] = result_df[col].map(lambda x: order_map.get(x, 999))
+                    result_df = result_df.sort_values('_sort_key', kind='stable')
+                    result_df = result_df.drop('_sort_key', axis=1)
+                elif i == len(sort_cols) - 2 and order2:  # 2º critério
+                    order_map = {v: idx for idx, v in enumerate(order2)}
+                    result_df['_sort_key'] = result_df[col].map(lambda x: order_map.get(x, 999))
+                    result_df = result_df.sort_values('_sort_key', kind='stable')
+                    result_df = result_df.drop('_sort_key', axis=1)
+                else:
+                    result_df = result_df.sort_values(col, kind='stable')
+        
+        return result_df
+    
+    # Aplicar ordenação ao filtered_df
+    sorted_df = apply_custom_sort(
+        filtered_df, 
+        sort_by, 
+        st.session_state.sort_values_order_1, 
+        st.session_state.sort_values_order_2
+    )
+    
+    # ========================================
+    # TABELA (visualização ou edição)
+    # ========================================
+    st.markdown("---")
+    
     # Rename columns for display
-    display_df = filtered_df[view_cols].copy()
+    display_df = sorted_df[view_cols].copy()
     display_df.columns = [all_columns.get(col, col) for col in view_cols]
     
     if not edit_mode:
-        # Normal view mode
+        # Normal view mode - mostra tabela ordenada
         st.dataframe(
             display_df,
             use_container_width=True,
@@ -315,10 +555,10 @@ else:
         )
     else:
         # Edit mode with data_editor
-        st.info("📝 **Modo Edição Ativo** - Edite os campos diretamente na tabela. Ao guardar na DB, a TAG DO LAYOUT é atualizada automaticamente se o DES_NUM mudar.")
+        st.info("📝 **Modo Edição Ativo** - Edite os campos diretamente na tabela.")
         
-        # Prepare editable dataframe
-        edit_df = filtered_df[edit_cols].copy()
+        # Prepare editable dataframe (usa sorted_df para manter ordenação)
+        edit_df = sorted_df[edit_cols].copy()
         
         # Use data_editor for editing
         edited_df = st.data_editor(
@@ -329,158 +569,11 @@ else:
             key="data_editor"
         )
         
-        # Export buttons
-        st.markdown("---")
-        st.subheader("📤 Exportar CSV")
+        # Botões de guardar
+        col_save1, col_save2, col_save3 = st.columns(3)
         
-        # Seleção de DWG
-        dwg_list = filtered_df['dwg_name'].dropna().unique().tolist() if 'dwg_name' in filtered_df.columns else []
-        dwg_options = ["Todos os DWGs"] + sorted(dwg_list)
-        
-        col_dwg, col_order = st.columns(2)
-        
-        with col_dwg:
-            selected_dwg = st.selectbox("🗂️ Qual DWG exportar?", dwg_options, key="export_dwg")
-        
-        # Ordenação por múltiplos critérios
-        with col_order:
-            st.markdown("**📊 Ordenação (arrastar para reordenar)**")
-        
-        # Colunas disponíveis para ordenação
-        sort_columns_available = {
-            'des_num': 'Nº Desenho',
-            'tipo_display': 'Tipo',
-            'elemento_key': 'Elemento',
-            'layout_name': 'Layout',
-            'r': 'Revisão'
-        }
-        
-        # Seleção de critérios de ordenação
-        col_sort1, col_sort2, col_sort3 = st.columns(3)
-        
-        with col_sort1:
-            sort1 = st.selectbox("1º Critério", list(sort_columns_available.values()), index=0, key="sort1")
-        with col_sort2:
-            sort2 = st.selectbox("2º Critério", ["(nenhum)"] + list(sort_columns_available.values()), index=0, key="sort2")
-        with col_sort3:
-            sort3 = st.selectbox("3º Critério", ["(nenhum)"] + list(sort_columns_available.values()), index=0, key="sort3")
-        
-        # Converter nomes amigáveis de volta para nomes de colunas
-        name_to_col = {v: k for k, v in sort_columns_available.items()}
-        
-        sort_by = []
-        if sort1 and sort1 in name_to_col:
-            sort_by.append(name_to_col[sort1])
-        if sort2 and sort2 != "(nenhum)" and sort2 in name_to_col:
-            sort_by.append(name_to_col[sort2])
-        if sort3 and sort3 != "(nenhum)" and sort3 in name_to_col:
-            sort_by.append(name_to_col[sort3])
-        
-        col_exp1, col_exp2, col_exp3 = st.columns(3)
-        
-        with col_exp1:
-            # Export edited data as CSV for AutoLISP import
-            if st.button("📤 Exportar CSV para AutoCAD", use_container_width=True):
-                # Usar filtered_df para ter todos os campos da DB
-                export_df = filtered_df.copy()
-                
-                # Filtrar por DWG
-                if selected_dwg != "Todos os DWGs" and 'dwg_name' in export_df.columns:
-                    export_df = export_df[export_df['dwg_name'] == selected_dwg]
-                
-                # Ordenar
-                if sort_by:
-                    existing_sort = [col for col in sort_by if col in export_df.columns]
-                    if existing_sort:
-                        export_df = export_df.sort_values(by=existing_sort)
-                
-                # Obter desenhos com todas as revisões do banco de dados
-                conn = get_connection()
-                dwg_filter = selected_dwg if selected_dwg != "Todos os DWGs" else None
-                desenhos_full = get_all_desenhos_with_revisoes(conn, dwg_filter)
-                conn.close()
-                
-                if not desenhos_full:
-                    st.warning("⚠️ Nenhum desenho encontrado para exportar")
-                else:
-                    # Converter para DataFrame com todos os 29 campos na ordem exata da LSP
-                    export_data = []
-                    for d in desenhos_full:
-                        export_data.append({
-                            'TAG DO LAYOUT': d.get('layout_name', ''),
-                            'CLIENTE': d.get('cliente', ''),
-                            'OBRA': d.get('obra', ''),
-                            'LOCALIZACAO': d.get('localizacao', ''),
-                            'ESPECIALIDADE': d.get('especialidade', ''),
-                            'FASE': d.get('fase', ''),
-                            'DATA 1ª EMISSÃO': d.get('data', ''),
-                            'PROJETOU': d.get('projetou', ''),
-                            'NUMERO DE DESENHO': d.get('des_num', ''),
-                            'TIPO': d.get('tipo_display', ''),
-                            'ELEMENTO': d.get('elemento', ''),
-                            'TITULO': d.get('titulo', ''),
-                            'REVISÃO A': d.get('rev_a', ''),
-                            'DATA REVISAO A': d.get('data_a', ''),
-                            'DESCRIÇÃO REVISÃO A': d.get('desc_a', ''),
-                            'REVISÃO B': d.get('rev_b', ''),
-                            'DATA REVISAO B': d.get('data_b', ''),
-                            'DESCRIÇÃO REVISÃO B': d.get('desc_b', ''),
-                            'REVISÃO C': d.get('rev_c', ''),
-                            'DATA REVISAO C': d.get('data_c', ''),
-                            'DESCRIÇÃO REVISÃO C': d.get('desc_c', ''),
-                            'REVISÃO D': d.get('rev_d', ''),
-                            'DATA REVISAO D': d.get('data_d', ''),
-                            'DESCRIÇÃO REVISÃO D': d.get('desc_d', ''),
-                            'REVISÃO E': d.get('rev_e', ''),
-                            'DATA REVISAO E': d.get('data_e', ''),
-                            'DESCRIÇÃO REVISÃO E': d.get('desc_e', ''),
-                            'NOME DWG': d.get('dwg_name', ''),
-                            'ID_CAD': d.get('id_cad', ''),
-                        })
-                    
-                    export_df = pd.DataFrame(export_data)
-                    
-                    # Ordenar se especificado
-                    if sort_by:
-                        # Mapear colunas internas para colunas de export
-                        sort_map = {
-                            'layout_name': 'TAG DO LAYOUT',
-                            'tipo_display': 'TIPO',
-                            'des_num': 'NUMERO DE DESENHO',
-                            'elemento': 'ELEMENTO',
-                            'titulo': 'TITULO',
-                            'dwg_name': 'NOME DWG',
-                            'r': 'REVISÃO A'  # Fallback para revisão
-                        }
-                        export_sort = [sort_map.get(col, col) for col in sort_by if sort_map.get(col) in export_df.columns]
-                        if export_sort:
-                            export_df = export_df.sort_values(by=export_sort)
-                    
-                    # Save to output folder
-                    output_filename = f"ALTERACOES_PARA_AUTOCAD_{selected_dwg.replace(' ', '_')}.csv" if selected_dwg != "Todos os DWGs" else "ALTERACOES_PARA_AUTOCAD.csv"
-                    output_path = Path(f"output/{output_filename}")
-                    output_path.parent.mkdir(parents=True, exist_ok=True)
-                    export_df.to_csv(output_path, sep=';', index=False, encoding='utf-8-sig')
-                    
-                    dwg_info = f" (DWG: {selected_dwg})" if selected_dwg != "Todos os DWGs" else ""
-                    sort_info = f" | Ordenado por: {', '.join([sort_columns_available[c] for c in sort_by])}" if sort_by else ""
-                    st.success(f"✅ CSV exportado para: {output_path} ({len(export_df)} desenhos){dwg_info}{sort_info}")
-                    st.info("💡 Formato: 29 campos no formato exato da LSP (compatível com importação)")
-        
-        with col_exp2:
-            # Download button
-            csv_data = edited_df.to_csv(sep=';', index=False).encode('utf-8-sig')
-            st.download_button(
-                label="💾 Download CSV",
-                data=csv_data,
-                file_name="desenhos_editados.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-        
-        with col_exp3:
-            # Save changes to database
-            if st.button("💾 Guardar na DB", use_container_width=True):
+        with col_save1:
+            if st.button("💾 Guardar na DB", use_container_width=True, type="primary"):
                 try:
                     conn = get_connection()
                     cursor = conn.cursor()
@@ -493,88 +586,51 @@ else:
                         new_des_num = str(row.get('des_num', '')) if pd.notna(row.get('des_num')) else ''
                         new_r = str(row.get('r', '')) if pd.notna(row.get('r')) else ''
                         
-                        # Buscar valores originais da DB
                         cursor.execute("SELECT des_num, r FROM desenhos WHERE layout_name = ?", (old_layout_name,))
                         result = cursor.fetchone()
                         old_des_num = str(result[0]) if result and result[0] else ''
                         old_r = str(result[1]) if result and len(result) > 1 and result[1] else ''
                         
-                        # Reconstruir layout_name se DES_NUM ou R mudaram
-                        # Formato LSP: "[NumProj]"-"EST"-(DES_NUM)-"PE"-"E[NumEmissao]"-(R)
-                        # Com R:    669-EST-01-PE-E00-D   (6 partes)
-                        # Sem R:    669-EST-01-PE-E00     (5 partes)
                         new_layout_name = old_layout_name
                         
                         if old_layout_name and '-' in old_layout_name:
                             parts = old_layout_name.split('-')
-                            # Mínimo 5 partes: NumProj-EST-DES_NUM-PE-E00
                             if len(parts) >= 5:
-                                # parts[0] = NUMPROJETO (669)
-                                # parts[1] = EST (especialidade)
-                                # parts[2] = DES_NUM (01, 02, FUN01, etc)
-                                # parts[3] = PE (fase)
-                                # parts[4] = E00 (emissão)
-                                # parts[5] = R (D) - OPCIONAL, pode não existir
-                                
                                 layout_changed = False
                                 
-                                # Atualizar DES_NUM (posição 2)
                                 if new_des_num and old_des_num != new_des_num:
                                     parts[2] = new_des_num
                                     layout_changed = True
                                 
-                                # Atualizar R - lógica igual à LSP
                                 if old_r != new_r:
                                     if new_r and new_r != '-':
-                                        # Tem revisão nova: adicionar ou substituir
                                         if len(parts) == 5:
-                                            # Não tinha R, adicionar
                                             parts.append(new_r)
                                         else:
-                                            # Tinha R, substituir
                                             parts[5] = new_r
                                         layout_changed = True
                                     else:
-                                        # R vazio ou "-": remover se existir
                                         if len(parts) == 6:
-                                            parts = parts[:5]  # Remover R
+                                            parts = parts[:5]
                                             layout_changed = True
                                 
                                 if layout_changed:
                                     new_layout_name = '-'.join(parts)
                                     layout_updated_count += 1
                         
-                        # Atualizar todos os campos incluindo layout_name
                         cursor.execute("""
                             UPDATE desenhos SET
-                                layout_name = ?,
-                                cliente = ?,
-                                obra = ?,
-                                localizacao = ?,
-                                especialidade = ?,
-                                fase = ?,
-                                data = ?,
-                                projetou = ?,
-                                des_num = ?,
-                                tipo_display = ?,
-                                elemento_key = ?,
-                                elemento_titulo = ?,
-                                r = ?
+                                layout_name = ?, cliente = ?, obra = ?, localizacao = ?,
+                                especialidade = ?, fase = ?, data = ?, projetou = ?,
+                                des_num = ?, tipo_display = ?, elemento_key = ?,
+                                elemento_titulo = ?, r = ?
                             WHERE layout_name = ?
                         """, (
-                            new_layout_name,
-                            row.get('cliente', ''),
-                            row.get('obra', ''),
-                            row.get('localizacao', ''),
-                            row.get('especialidade', ''),
-                            row.get('fase', ''),
-                            row.get('data', ''),
-                            row.get('projetou', ''),
-                            new_des_num,
-                            row.get('tipo_display', ''),
-                            row.get('elemento_key', ''),
-                            row.get('elemento_titulo', ''),
-                            new_r if new_r else row.get('r', ''),
+                            new_layout_name, row.get('cliente', ''), row.get('obra', ''),
+                            row.get('localizacao', ''), row.get('especialidade', ''),
+                            row.get('fase', ''), row.get('data', ''), row.get('projetou', ''),
+                            new_des_num, row.get('tipo_display', ''), row.get('elemento_key', ''),
+                            row.get('elemento_titulo', ''), new_r if new_r else row.get('r', ''),
                             old_layout_name
                         ))
                         updated_count += 1
@@ -582,14 +638,129 @@ else:
                     conn.commit()
                     conn.close()
                     
-                    msg = f"✅ {updated_count} registos atualizados na base de dados!"
+                    msg = f"✅ {updated_count} registos atualizados!"
                     if layout_updated_count > 0:
-                        msg += f"\n📋 {layout_updated_count} TAGs de Layout atualizadas (DES_NUM ou R alterados)"
+                        msg += f" ({layout_updated_count} layouts renomeados)"
                     st.success(msg)
-                    st.rerun()  # Recarregar para mostrar novos layout_names
+                    st.rerun()
                     
                 except Exception as e:
                     st.error(f"❌ Erro ao guardar: {e}")
+        
+        with col_save2:
+            csv_data = edited_df.to_csv(sep=';', index=False).encode('utf-8-sig')
+            st.download_button(
+                label="💾 Download CSV editado",
+                data=csv_data,
+                file_name="desenhos_editados.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+    
+    # ========================================
+    # EXPORTAR CSV (sempre visível)
+    # ========================================
+    st.markdown("---")
+    st.subheader("📤 Exportar CSV para AutoCAD")
+    
+    # Seleção de DWG
+    dwg_list = sorted_df['dwg_name'].dropna().unique().tolist() if 'dwg_name' in sorted_df.columns else []
+    dwg_options = ["Todos os DWGs"] + sorted(dwg_list)
+    
+    col_exp_dwg, col_exp_btn = st.columns([2, 1])
+    
+    with col_exp_dwg:
+        selected_dwg = st.selectbox("🗂️ Qual DWG exportar?", dwg_options, key="export_dwg")
+    
+    with col_exp_btn:
+        if st.button("📤 Exportar CSV", use_container_width=True, type="primary"):
+            # Obter desenhos com todas as revisões do banco de dados
+            conn = get_connection()
+            dwg_filter = selected_dwg if selected_dwg != "Todos os DWGs" else None
+            desenhos_full = get_all_desenhos_with_revisoes(conn, dwg_filter)
+            conn.close()
+            
+            if not desenhos_full:
+                st.warning("⚠️ Nenhum desenho encontrado para exportar")
+            else:
+                # Converter para DataFrame com todos os 29 campos na ordem exata da LSP
+                export_data = []
+                for d in desenhos_full:
+                    export_data.append({
+                        'TAG DO LAYOUT': d.get('layout_name', ''),
+                        'CLIENTE': d.get('cliente', ''),
+                        'OBRA': d.get('obra', ''),
+                        'LOCALIZACAO': d.get('localizacao', ''),
+                        'ESPECIALIDADE': d.get('especialidade', ''),
+                        'FASE': d.get('fase', ''),
+                        'DATA 1ª EMISSÃO': d.get('data', ''),
+                        'PROJETOU': d.get('projetou', ''),
+                        'NUMERO DE DESENHO': d.get('des_num', ''),
+                        'TIPO': d.get('tipo_display', ''),
+                        'ELEMENTO': d.get('elemento_key', ''),
+                        'TITULO': d.get('titulo', ''),
+                        'REVISÃO A': d.get('rev_a', ''),
+                        'DATA REVISAO A': d.get('data_a', ''),
+                        'DESCRIÇÃO REVISÃO A': d.get('desc_a', ''),
+                        'REVISÃO B': d.get('rev_b', ''),
+                        'DATA REVISAO B': d.get('data_b', ''),
+                        'DESCRIÇÃO REVISÃO B': d.get('desc_b', ''),
+                        'REVISÃO C': d.get('rev_c', ''),
+                        'DATA REVISAO C': d.get('data_c', ''),
+                        'DESCRIÇÃO REVISÃO C': d.get('desc_c', ''),
+                        'REVISÃO D': d.get('rev_d', ''),
+                        'DATA REVISAO D': d.get('data_d', ''),
+                        'DESCRIÇÃO REVISÃO D': d.get('desc_d', ''),
+                        'REVISÃO E': d.get('rev_e', ''),
+                        'DATA REVISAO E': d.get('data_e', ''),
+                        'DESCRIÇÃO REVISÃO E': d.get('desc_e', ''),
+                        'NOME DWG': d.get('dwg_name', ''),
+                        'ID_CAD': d.get('id_cad', ''),
+                        '_tipo_display': d.get('tipo_display', ''),
+                        '_elemento_key': d.get('elemento_key', ''),
+                        '_des_num': d.get('des_num', ''),
+                    })
+                
+                export_df = pd.DataFrame(export_data)
+                
+                # Aplicar ordenação personalizada
+                if sort_by:
+                    sort_map = {
+                        'tipo_display': '_tipo_display',
+                        'elemento_key': '_elemento_key',
+                        'des_num': '_des_num',
+                        'layout_name': 'TAG DO LAYOUT',
+                        'r': 'REVISÃO A'
+                    }
+                    
+                    for i, col in enumerate(reversed(sort_by)):
+                        export_col = sort_map.get(col, col)
+                        if export_col in export_df.columns:
+                            if i == len(sort_by) - 1 and st.session_state.sort_values_order_1:
+                                order_map = {v: idx for idx, v in enumerate(st.session_state.sort_values_order_1)}
+                                export_df['_sort_key'] = export_df[export_col].map(lambda x: order_map.get(x, 999))
+                                export_df = export_df.sort_values('_sort_key', kind='stable')
+                                export_df = export_df.drop('_sort_key', axis=1)
+                            elif i == len(sort_by) - 2 and st.session_state.sort_values_order_2:
+                                order_map = {v: idx for idx, v in enumerate(st.session_state.sort_values_order_2)}
+                                export_df['_sort_key'] = export_df[export_col].map(lambda x: order_map.get(x, 999))
+                                export_df = export_df.sort_values('_sort_key', kind='stable')
+                                export_df = export_df.drop('_sort_key', axis=1)
+                            else:
+                                export_df = export_df.sort_values(export_col, kind='stable')
+                
+                # Remover colunas internas
+                export_df = export_df.drop(['_tipo_display', '_elemento_key', '_des_num'], axis=1, errors='ignore')
+                
+                # Save to output folder
+                output_filename = f"ALTERACOES_PARA_AUTOCAD_{selected_dwg.replace(' ', '_')}.csv" if selected_dwg != "Todos os DWGs" else "ALTERACOES_PARA_AUTOCAD.csv"
+                output_path = Path(f"output/{output_filename}")
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                export_df.to_csv(output_path, sep=';', index=False, encoding='utf-8-sig')
+                
+                dwg_info = f" (DWG: {selected_dwg})" if selected_dwg != "Todos os DWGs" else ""
+                sort_info = f" | Ordenado por: {', '.join([sort_columns_available.get(c, c) for c in sort_by])}" if sort_by else ""
+                st.success(f"✅ CSV exportado: {output_path} ({len(export_df)} desenhos){dwg_info}{sort_info}")
     
     # Statistics
     st.markdown("---")

@@ -418,6 +418,116 @@ def get_db_stats(conn) -> Dict[str, Any]:
     }
 
 
+def delete_desenhos_by_tipo(conn, tipo: str) -> int:
+    """
+    Delete all desenhos with a specific tipo_display.
+    
+    Args:
+        conn: Database connection
+        tipo: Value of tipo_display to delete
+        
+    Returns:
+        Number of desenhos deleted
+    """
+    cursor = conn.cursor()
+    
+    # Get IDs of desenhos to delete
+    cursor.execute("SELECT id FROM desenhos WHERE tipo_display = ?", (tipo,))
+    ids = [row[0] for row in cursor.fetchall()]
+    count = len(ids)
+    
+    if ids:
+        # Delete revisoes for these desenhos
+        placeholders = ','.join('?' * len(ids))
+        cursor.execute(f"DELETE FROM revisoes WHERE desenho_id IN ({placeholders})", ids)
+        
+        # Delete desenhos
+        cursor.execute("DELETE FROM desenhos WHERE tipo_display = ?", (tipo,))
+    
+    conn.commit()
+    return count
+
+
+def delete_desenhos_by_elemento(conn, elemento: str) -> int:
+    """
+    Delete all desenhos with a specific elemento_key.
+    
+    Args:
+        conn: Database connection
+        elemento: Value of elemento_key to delete
+        
+    Returns:
+        Number of desenhos deleted
+    """
+    cursor = conn.cursor()
+    
+    # Get IDs of desenhos to delete
+    cursor.execute("SELECT id FROM desenhos WHERE elemento_key = ?", (elemento,))
+    ids = [row[0] for row in cursor.fetchall()]
+    count = len(ids)
+    
+    if ids:
+        # Delete revisoes for these desenhos
+        placeholders = ','.join('?' * len(ids))
+        cursor.execute(f"DELETE FROM revisoes WHERE desenho_id IN ({placeholders})", ids)
+        
+        # Delete desenhos
+        cursor.execute("DELETE FROM desenhos WHERE elemento_key = ?", (elemento,))
+    
+    conn.commit()
+    return count
+
+
+def delete_desenho_by_layout(conn, layout_name: str) -> int:
+    """
+    Delete a single desenho by layout_name.
+    
+    Args:
+        conn: Database connection
+        layout_name: Layout name to delete
+        
+    Returns:
+        Number of desenhos deleted (0 or 1)
+    """
+    cursor = conn.cursor()
+    
+    # Get ID of desenho to delete
+    cursor.execute("SELECT id FROM desenhos WHERE layout_name = ?", (layout_name,))
+    row = cursor.fetchone()
+    
+    if row:
+        desenho_id = row[0]
+        # Delete revisoes for this desenho
+        cursor.execute("DELETE FROM revisoes WHERE desenho_id = ?", (desenho_id,))
+        # Delete desenho
+        cursor.execute("DELETE FROM desenhos WHERE id = ?", (desenho_id,))
+        conn.commit()
+        return 1
+    
+    return 0
+
+
+def get_unique_tipos(conn) -> List[str]:
+    """Get list of unique tipo_display values."""
+    cursor = conn.cursor()
+    cursor.execute("SELECT DISTINCT tipo_display FROM desenhos WHERE tipo_display IS NOT NULL AND tipo_display != '' ORDER BY tipo_display")
+    return [row[0] for row in cursor.fetchall()]
+
+
+def get_unique_elementos(conn) -> List[str]:
+    """Get list of unique elemento_key values."""
+    cursor = conn.cursor()
+    cursor.execute("SELECT DISTINCT elemento_key FROM desenhos WHERE elemento_key IS NOT NULL AND elemento_key != '' ORDER BY elemento_key")
+    return [row[0] for row in cursor.fetchall()]
+
+
+def get_all_layout_names(conn) -> List[str]:
+    """Get list of all layout_names."""
+    cursor = conn.cursor()
+    cursor.execute("SELECT layout_name FROM desenhos ORDER BY layout_name")
+    return [row[0] for row in cursor.fetchall()]
+
+
 def get_desenho_with_revisoes(conn, desenho_id: int) -> Dict[str, Any]:
     """
     Get a desenho with all revisões A-E expanded.

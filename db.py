@@ -416,3 +416,86 @@ def get_db_stats(conn) -> Dict[str, Any]:
         'total_dwgs': total_dwgs,
         'dwg_list': dwg_list
     }
+
+
+def get_desenho_with_revisoes(conn, desenho_id: int) -> Dict[str, Any]:
+    """
+    Get a desenho with all revisões A-E expanded.
+    
+    Args:
+        conn: Database connection
+        desenho_id: ID of the desenho
+        
+    Returns:
+        Dict with desenho fields and rev_a, data_a, desc_a through rev_e, data_e, desc_e
+    """
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM desenhos WHERE id = ?", (desenho_id,))
+    row = cursor.fetchone()
+    
+    if not row:
+        return {}
+    
+    desenho = dict(row)
+    
+    # Get revisoes
+    revisoes = get_revisoes_by_desenho_id(conn, desenho_id)
+    
+    # Initialize all revision fields
+    for letter in ['a', 'b', 'c', 'd', 'e']:
+        desenho[f'rev_{letter}'] = ''
+        desenho[f'data_{letter}'] = ''
+        desenho[f'desc_{letter}'] = ''
+    
+    # Map revisoes to fields
+    for rev in revisoes:
+        code = rev.get('rev_code', '').upper()
+        if code in ['A', 'B', 'C', 'D', 'E']:
+            letter = code.lower()
+            desenho[f'rev_{letter}'] = code
+            desenho[f'data_{letter}'] = rev.get('rev_date', '')
+            desenho[f'desc_{letter}'] = rev.get('rev_desc', '')
+    
+    # Extract id_cad from raw_attributes if available
+    raw = desenho.get('raw_attributes', '')
+    if raw:
+        try:
+            # raw_attributes is stored as str(dict), try to parse it
+            import ast
+            parsed = ast.literal_eval(raw)
+            desenho['id_cad'] = parsed.get('id_cad', '')
+        except:
+            desenho['id_cad'] = ''
+    else:
+        desenho['id_cad'] = ''
+    
+    return desenho
+
+
+def get_all_desenhos_with_revisoes(conn, dwg_name: str = None) -> List[Dict[str, Any]]:
+    """
+    Get all desenhos with revisões A-E expanded.
+    
+    Args:
+        conn: Database connection
+        dwg_name: Optional DWG name filter
+        
+    Returns:
+        List of desenhos with all revision fields
+    """
+    cursor = conn.cursor()
+    
+    if dwg_name:
+        cursor.execute("SELECT id FROM desenhos WHERE dwg_name = ?", (dwg_name,))
+    else:
+        cursor.execute("SELECT id FROM desenhos")
+    
+    rows = cursor.fetchall()
+    
+    result = []
+    for row in rows:
+        desenho = get_desenho_with_revisoes(conn, row['id'])
+        if desenho:
+            result.append(desenho)
+    
+    return result

@@ -1,5 +1,5 @@
 ;; ============================================================================
-;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V39.9 - Prefixo DES_NUM)
+;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V40.1 - Import DB fix)
 ;; ============================================================================
 
 ;; Variáveis globais (persistem durante sessão)
@@ -1586,12 +1586,14 @@
     (princ "\n\n   --- IMPORTAR LISTA DE DESENHOS ---")
     (princ "\n   1. Importar CSV (por ID_CAD)")
     (princ "\n   2. Importar CSV de Alterações (por Layout)")
+    (princ "\n   3. Importar de DB (todos os campos)")
     (princ "\n   0. Voltar")
-    (initget "1 2 0")
-    (setq optSub (getkword "\n   Opcao [1/2/0]: "))
+    (initget "1 2 3 0")
+    (setq optSub (getkword "\n   Opcao [1/2/3/0]: "))
     (cond
       ((= optSub "1") (Run_ImportCSV))
       ((= optSub "2") (Run_ImportCSV_ByLayout))
+      ((= optSub "3") (Run_ImportFromDB))
       ((= optSub "0") (setq loopSub nil))
       ((= optSub nil) (setq loopSub nil))
     )
@@ -2430,6 +2432,224 @@
   )
 )
 
+;; ============================================================================
+;; Run_ImportFromDB - Importar CSV completo da DB (29 campos)
+;; Formato: TAG DO LAYOUT;CLIENTE;OBRA;LOCALIZACAO;ESPECIALIDADE;FASE;DATA 1ª EMISSÃO;
+;;          PROJETOU;NUMERO DE DESENHO;TIPO;ELEMENTO;TITULO;REVISÃO A;DATA REVISAO A;
+;;          DESCRIÇÃO REVISÃO A;...B...C...D...E...;NOME DWG;ID_CAD
+;; ============================================================================
+(defun Run_ImportFromDB ( / doc path csvFile fileDes line parts headers headerMap
+                           idCad cliente obra localizacao especialidade fase
+                           data projetou desNum tipo elemento titulo
+                           revA dataA descA revB dataB descB revC dataC descC
+                           revD dataD descD revE dataE descE
+                           countUpdates countNotFound ename obj handle foundBlock tabsSkipped)
+  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
+  (setq path (getvar "DWGPREFIX"))
+  (setq csvFile (getfiled "Selecione o CSV exportado da DB" path "csv" 4))
+  (setq tabsSkipped nil)
+  
+  (if (and csvFile (findfile csvFile))
+    (progn
+      (setq fileDes (open csvFile "r"))
+      (if fileDes
+        (progn
+          (princ "\nA processar CSV da DB...")
+          (setq countUpdates 0)
+          (setq countNotFound 0)
+          
+          ;; Ler header e criar mapeamento de colunas
+          (setq line (read-line fileDes))
+          (setq headers (StrSplit line ";"))
+          (setq headerMap (BuildHeaderMap headers))
+          
+          ;; Processar cada linha
+          (while (setq line (read-line fileDes))
+            (setq parts (StrSplit line ";"))
+            
+            ;; Obter ID_CAD (handle) - campo obrigatório
+            (setq idCad (GetCSVValue parts headerMap "ID_CAD"))
+            
+            (if (and idCad (/= idCad ""))
+              (progn
+                ;; Verificar se o bloco existe pelo handle
+                (setq foundBlock nil)
+                (if (not (vl-catch-all-error-p (vl-catch-all-apply 'handent (list idCad))))
+                  (progn
+                    (setq ename (handent idCad))
+                    (if ename
+                      (progn
+                        (setq obj (vlax-ename->vla-object ename))
+                        (if (IsTargetBlock obj)
+                          (setq foundBlock T)
+                        )
+                      )
+                    )
+                  )
+                )
+                
+                (if foundBlock
+                  (progn
+                    ;; Obter todos os valores do CSV
+                    (setq cliente (GetCSVValue parts headerMap "CLIENTE"))
+                    (setq obra (GetCSVValue parts headerMap "OBRA"))
+                    (setq localizacao (GetCSVValue parts headerMap "LOCALIZACAO"))
+                    (if (null localizacao) (setq localizacao (GetCSVValue parts headerMap "LOCALIZAÇÃO")))
+                    (setq especialidade (GetCSVValue parts headerMap "ESPECIALIDADE"))
+                    (setq fase (GetCSVValue parts headerMap "FASE"))
+                    (setq data (GetCSVValue parts headerMap "DATA 1ª EMISSÃO"))
+                    (if (null data) (setq data (GetCSVValue parts headerMap "DATA 1ª EMISSAO")))
+                    (setq projetou (GetCSVValue parts headerMap "PROJETOU"))
+                    (setq desNum (GetCSVValue parts headerMap "NUMERO DE DESENHO"))
+                    (if (null desNum) (setq desNum (GetCSVValue parts headerMap "DES_NUM")))
+                    (setq tipo (GetCSVValue parts headerMap "TIPO"))
+                    (setq elemento (GetCSVValue parts headerMap "ELEMENTO"))
+                    (setq titulo (GetCSVValue parts headerMap "TITULO"))
+                    
+                    ;; Revisões A-E
+                    (setq revA (GetCSVValue parts headerMap "REVISÃO A"))
+                    (if (null revA) (setq revA (GetCSVValue parts headerMap "REVISAO A")))
+                    (setq dataA (GetCSVValue parts headerMap "DATA REVISAO A"))
+                    (setq descA (GetCSVValue parts headerMap "DESCRIÇÃO REVISÃO A"))
+                    (if (null descA) (setq descA (GetCSVValue parts headerMap "DESCRICAO REVISAO A")))
+                    
+                    (setq revB (GetCSVValue parts headerMap "REVISÃO B"))
+                    (if (null revB) (setq revB (GetCSVValue parts headerMap "REVISAO B")))
+                    (setq dataB (GetCSVValue parts headerMap "DATA REVISAO B"))
+                    (setq descB (GetCSVValue parts headerMap "DESCRIÇÃO REVISÃO B"))
+                    (if (null descB) (setq descB (GetCSVValue parts headerMap "DESCRICAO REVISAO B")))
+                    
+                    (setq revC (GetCSVValue parts headerMap "REVISÃO C"))
+                    (if (null revC) (setq revC (GetCSVValue parts headerMap "REVISAO C")))
+                    (setq dataC (GetCSVValue parts headerMap "DATA REVISAO C"))
+                    (setq descC (GetCSVValue parts headerMap "DESCRIÇÃO REVISÃO C"))
+                    (if (null descC) (setq descC (GetCSVValue parts headerMap "DESCRICAO REVISAO C")))
+                    
+                    (setq revD (GetCSVValue parts headerMap "REVISÃO D"))
+                    (if (null revD) (setq revD (GetCSVValue parts headerMap "REVISAO D")))
+                    (setq dataD (GetCSVValue parts headerMap "DATA REVISAO D"))
+                    (setq descD (GetCSVValue parts headerMap "DESCRIÇÃO REVISÃO D"))
+                    (if (null descD) (setq descD (GetCSVValue parts headerMap "DESCRICAO REVISAO D")))
+                    
+                    (setq revE (GetCSVValue parts headerMap "REVISÃO E"))
+                    (if (null revE) (setq revE (GetCSVValue parts headerMap "REVISAO E")))
+                    (setq dataE (GetCSVValue parts headerMap "DATA REVISAO E"))
+                    (setq descE (GetCSVValue parts headerMap "DESCRIÇÃO REVISÃO E"))
+                    (if (null descE) (setq descE (GetCSVValue parts headerMap "DESCRICAO REVISAO E")))
+                    
+                    ;; Atualizar todos os atributos
+                    (if (and cliente (/= cliente "")) (UpdateSingleTag idCad "CLIENTE" cliente))
+                    (if (and obra (/= obra "")) (UpdateSingleTag idCad "OBRA" obra))
+                    (if (and localizacao (/= localizacao "")) (UpdateSingleTag idCad "LOCALIZACAO" localizacao))
+                    (if (and especialidade (/= especialidade "")) (UpdateSingleTag idCad "ESPECIALIDADE" especialidade))
+                    (if (and fase (/= fase "")) (UpdateSingleTag idCad "FASE" fase))
+                    (if (and data (/= data "")) (UpdateSingleTag idCad "DATA" data))
+                    (if (and projetou (/= projetou "")) (UpdateSingleTag idCad "PROJETOU" projetou))
+                    (if (and tipo (/= tipo "")) (UpdateSingleTag idCad "TIPO" tipo))
+                    (if (and elemento (/= elemento "")) (UpdateSingleTag idCad "ELEMENTO" elemento))
+                    (if (and titulo (/= titulo "")) (UpdateSingleTag idCad "TITULO" titulo))
+                    (if (and desNum (/= desNum "")) 
+                      (progn
+                        (UpdateSingleTag idCad "DES_NUM" desNum)
+                        ;; Forçar refresh do bloco após mudar DES_NUM
+                        (vl-catch-all-apply 'vla-Update (list obj))
+                      )
+                    )
+                    
+                    ;; Atualizar revisões A-E
+                    (if (and revA (/= revA "") (/= revA "-"))
+                      (progn
+                        (UpdateSingleTag idCad "REV_A" revA)
+                        (if dataA (UpdateSingleTag idCad "DATA_A" dataA))
+                        (if descA (UpdateSingleTag idCad "DESC_A" descA))
+                      )
+                    )
+                    (if (and revB (/= revB "") (/= revB "-"))
+                      (progn
+                        (UpdateSingleTag idCad "REV_B" revB)
+                        (if dataB (UpdateSingleTag idCad "DATA_B" dataB))
+                        (if descB (UpdateSingleTag idCad "DESC_B" descB))
+                      )
+                    )
+                    (if (and revC (/= revC "") (/= revC "-"))
+                      (progn
+                        (UpdateSingleTag idCad "REV_C" revC)
+                        (if dataC (UpdateSingleTag idCad "DATA_C" dataC))
+                        (if descC (UpdateSingleTag idCad "DESC_C" descC))
+                      )
+                    )
+                    (if (and revD (/= revD "") (/= revD "-"))
+                      (progn
+                        (UpdateSingleTag idCad "REV_D" revD)
+                        (if dataD (UpdateSingleTag idCad "DATA_D" dataD))
+                        (if descD (UpdateSingleTag idCad "DESC_D" descD))
+                      )
+                    )
+                    (if (and revE (/= revE "") (/= revE "-"))
+                      (progn
+                        (UpdateSingleTag idCad "REV_E" revE)
+                        (if dataE (UpdateSingleTag idCad "DATA_E" dataE))
+                        (if descE (UpdateSingleTag idCad "DESC_E" descE))
+                      )
+                    )
+                    
+                    ;; Atualizar R (revisão atual) e ELEMENTO_TITULO
+                    (vl-catch-all-apply 'UpdateAttributeR (list idCad))
+                    (vl-catch-all-apply 'UpdateElementoTitulo (list idCad))
+                    
+                    ;; Atualizar nome da TAB (só se formato estiver definido)
+                    (if *JSJ_TAB_FORMAT*
+                      (vl-catch-all-apply 'UpdateTabName (list idCad nil))
+                      (setq tabsSkipped T)
+                    )
+                    
+                    (princ ".")
+                    (setq countUpdates (1+ countUpdates))
+                  )
+                  (progn
+                    (princ (strcat "\n  [!] ID_CAD não encontrado: " idCad))
+                    (setq countNotFound (1+ countNotFound))
+                  )
+                )
+              )
+            )
+          )
+          
+          (close fileDes)
+          
+          ;; Regen com error handling
+          (vl-catch-all-apply 'vla-Regen (list doc acActiveViewport))
+          
+          (if (> countUpdates 0)
+            (WriteLog (strcat "IMPORTAR DB: " (itoa countUpdates) " desenhos atualizados (todos os campos)"))
+          )
+          
+          ;; Mensagem de conclusão
+          (if tabsSkipped
+            (alert (strcat "Importação da DB concluída!\n\n"
+                          "Desenhos atualizados: " (itoa countUpdates) "\n"
+                          "ID_CAD não encontrados: " (itoa countNotFound) "\n\n"
+                          "AVISO: Nomes das TABs NÃO atualizados!\n"
+                          "Use 'Layouts → Definir Formato TAB' primeiro,\n"
+                          "depois 'Layouts → Aplicar Formato TAB'."))
+            (alert (strcat "Importação da DB concluída!\n\n"
+                          "Desenhos atualizados: " (itoa countUpdates) "\n"
+                          "ID_CAD não encontrados: " (itoa countNotFound) "\n\n"
+                          "Todos os campos atualizados:\n"
+                          "- Dados gerais (Cliente, Obra, etc.)\n"
+                          "- DES_NUM, TIPO, ELEMENTO, TITULO\n"
+                          "- Revisões A a E\n"
+                          "- Nomes das TABs"))
+          )
+        )
+        (alert "Erro ao abrir ficheiro.")
+      )
+    )
+    (princ "\nCancelado.")
+  )
+  (princ)
+)
+
 ;; Run_ImportCSV - Importar CSV com formato: DWG_SOURCE;TIPO;DES_NUM;ELEMENTO;TITULO;REV;DATA;DESC;ID_CAD
 (defun Run_ImportCSV ( / doc path defaultName csvFile fileDes line parts valDwgSource valTipo valNum valElemento valTit valRev valData valDesc valHandle countUpdates) 
   (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) 
@@ -2675,7 +2895,7 @@
 ;; MENSAGEM DE CARREGAMENTO
 ;; ============================================================================
 (princ "\n========================================")
-(princ "\n GESTAO DESENHOS JSJ V39.8")
+(princ "\n GESTAO DESENHOS JSJ V40.1")
 (princ "\n========================================")
 (princ "\n Comandos disponiveis:")
 (princ "\n   GESTAODESENHOSJSJ - Menu principal")

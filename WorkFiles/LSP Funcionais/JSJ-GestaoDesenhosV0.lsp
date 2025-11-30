@@ -1,5 +1,5 @@
 ;; ============================================================================
-;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V39.9 - Prefixo DES_NUM)
+;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V39.7 - CSV Completo)
 ;; ============================================================================
 
 ;; Variáveis globais (persistem durante sessão)
@@ -424,11 +424,10 @@
     (princ "\n   4. Definir Utilizador")
     (princ "\n   5. Alterar Fase de Projeto")
     (princ "\n   6. Alterar ELEMENTO (Global)")
-    (princ "\n   7. Prefixo DES_NUM")
     (princ "\n   9. Navegar (ver desenho)")
     (princ "\n   0. Voltar")
-    (initget "1 2 3 4 5 6 7 9 0")
-    (setq optSub (getkword "\n   Opcao [1/2/3/4/5/6/7/9/0]: "))
+    (initget "1 2 3 4 5 6 9 0")
+    (setq optSub (getkword "\n   Opcao [1/2/3/4/5/6/9/0]: "))
     (cond
       ((= optSub "1") (Menu_EmitirRevisao))
       ((= optSub "2") (Run_GlobalVars_Selective_V29))
@@ -436,7 +435,6 @@
       ((= optSub "4") (SetCurrentUser))
       ((= optSub "5") (AlterarFaseProjeto))
       ((= optSub "6") (AlterarElementoGlobal))
-      ((= optSub "7") (AdicionarPrefixoDES_NUM))
       ((= optSub "9") (ModoNavegacao))
       ((= optSub "0") (setq loopSub nil))
       ((= optSub nil) (setq loopSub nil))
@@ -627,500 +625,6 @@
       (vla-Regen doc acActiveViewport)
       (WriteLog (strcat "ELEMENTO GLOBAL: '" newElemento "' em " (itoa count) " desenhos"))
       (alert (strcat "Concluído!\n\nELEMENTO = '" newElemento "'\nAtualizado em " (itoa count) " desenhos.\n\nO campo ELEMENTO_TITULO foi recalculado automaticamente."))
-    )
-  )
-  (princ)
-)
-
-;; ============================================================================
-;; ADICIONAR PREFIXO AO DES_NUM - Adiciona prefixo e atualiza tabs automaticamente
-;; ============================================================================
-;; EXTRAIR NUMERO DE UMA STRING (remove letras, mantém dígitos)
-;; Ex: "DIM01" -> "01", "BA02" -> "02", "03" -> "03"
-;; ============================================================================
-(defun ExtractNumberFromDesNum (str / result char i)
-  (setq result "")
-  (setq i 1)
-  (repeat (strlen str)
-    (setq char (substr str i 1))
-    (if (and (>= (ascii char) 48) (<= (ascii char) 57))  ;; 0-9
-      (setq result (strcat result char))
-    )
-    (setq i (1+ i))
-  )
-  (if (= result "") "00" result)
-)
-
-;; ============================================================================
-;; ADICIONAR/SUBSTITUIR PREFIXO NO DES_NUM
-;; Menu: 1) Todos ou 2) Por Tipo
-;; Se Por Tipo: 1) Por Elemento ou 2) Todos do tipo
-;; ============================================================================
-(defun AdicionarPrefixoDES_NUM ( / doc prefix count desNum blkHandle newDesNum currentDesNum currentElemento currentTipo modoAplicar modoTipo tipoList elementoList i item numPart tipoPrefixos prefixTipo tipoFiltro tipoSelecionado targets targetList)
-  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
-  
-  (princ "\n\n=== ADICIONAR/SUBSTITUIR PREFIXO DES_NUM ===")
-  (princ "\nSubstitui prefixo existente ou adiciona novo.")
-  (princ "\nEx: 'DIM01' com prefixo 'BA' -> 'BA01'")
-  
-  ;; Mostrar exemplo
-  (vlax-for lay (vla-get-Layouts doc)
-    (if (and (not currentDesNum)
-             (/= (vla-get-ModelType lay) :vlax-true)
-             (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
-      (vlax-for blk (vla-get-Block lay)
-        (if (and (not currentDesNum) (IsTargetBlock blk))
-          (progn
-            (setq currentDesNum (GetAttValue blk "DES_NUM"))
-            (setq currentTipo (GetAttValue blk "TIPO"))
-          )
-        )
-      )
-    )
-  )
-  (if currentDesNum
-    (princ (strcat "\nExemplo: DES_NUM='" currentDesNum "' -> numero='" (ExtractNumberFromDesNum currentDesNum) "'"))
-  )
-  
-  ;; Menu principal
-  (princ "\n\n--> Aplicar a:")
-  (princ "\n    1. TODOS os desenhos (mesmo prefixo)")
-  (princ "\n    2. Por TIPO (prefixo diferente por tipo)")
-  (initget "1 2")
-  (setq modoAplicar (getkword "\n    Opcao [1/2] <1>: "))
-  (if (null modoAplicar) (setq modoAplicar "1"))
-  
-  (cond
-    ;; ========== MODO 1: TODOS ==========
-    ((= modoAplicar "1")
-     (setq prefix (getstring T "\nNovo prefixo (Enter para remover): "))
-     
-     (princ "\n\n--> Quais desenhos?")
-     (princ "\n    Enter = TODOS")
-     (princ "\n    Lista = 1,2,5 ou 1-10")
-     (setq targets (getstring T "\nDesenhos: "))
-     (setq targetList nil)
-     (if (/= targets "") (setq targetList (StrSplit targets ",")))
-     
-     (setq count 0)
-     (vlax-for lay (vla-get-Layouts doc)
-       (if (and (/= (vla-get-ModelType lay) :vlax-true)
-                (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
-         (vlax-for blk (vla-get-Block lay)
-           (if (IsTargetBlock blk)
-             (progn
-               (setq desNum (GetAttValue blk "DES_NUM"))
-               (setq numPart (ExtractNumberFromDesNum desNum))
-               (setq blkHandle (vla-get-Handle blk))
-               (if (or (null targetList) (IsNumberInList numPart targetList))
-                 (progn
-                   (setq newDesNum (strcat prefix numPart))
-                   (UpdateSingleTag blkHandle "DES_NUM" newDesNum)
-                   (UpdateTabName blkHandle nil)
-                   (setq count (1+ count))
-                   (princ (strcat "\n  " desNum " -> " newDesNum))
-                 )
-               )
-             )
-           )
-         )
-       )
-     )
-     (vla-Regen doc acActiveViewport)
-     (alert (strcat "Prefixo '" prefix "' aplicado a " (itoa count) " desenhos."))
-    )
-    
-    ;; ========== MODO 2: Por TIPO ==========
-    ((= modoAplicar "2")
-     ;; Listar tipos
-     (setq tipoList '())
-     (vlax-for lay (vla-get-Layouts doc)
-       (if (and (/= (vla-get-ModelType lay) :vlax-true)
-                (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
-         (vlax-for blk (vla-get-Block lay)
-           (if (IsTargetBlock blk)
-             (progn
-               (setq currentTipo (GetAttValue blk "TIPO"))
-               (if (and currentTipo (/= currentTipo ""))
-                 (if (not (member currentTipo tipoList))
-                   (setq tipoList (cons currentTipo tipoList))
-                 )
-               )
-             )
-           )
-         )
-       )
-     )
-     (setq tipoList (reverse tipoList))
-     
-     (princ "\n\nTIPOS encontrados:")
-     (setq i 1)
-     (foreach item tipoList
-       (princ (strcat "\n  " (itoa i) ". " item))
-       (setq i (1+ i))
-     )
-     
-     (princ "\n\n--> Quais TIPOS? (Enter=TODOS, ou 1,2,3): ")
-     (setq tipoFiltro (getstring T ""))
-     (setq tipoSelecionado nil)
-     (if (/= tipoFiltro "") (setq tipoSelecionado (StrSplit tipoFiltro ",")))
-     
-     ;; Submenu: por elemento ou todos do tipo
-     (princ "\n\n--> Dentro de cada tipo:")
-     (princ "\n    1. Por ELEMENTO (prefixo por elemento)")
-     (princ "\n    2. TODOS desenhos do tipo (mesmo prefixo)")
-     (initget "1 2")
-     (setq modoTipo (getkword "\n    Opcao [1/2] <2>: "))
-     (if (null modoTipo) (setq modoTipo "2"))
-     
-     (cond
-       ;; Por ELEMENTO dentro do tipo
-       ((= modoTipo "1")
-        ;; Listar elementos
-        (setq elementoList '())
-        (vlax-for lay (vla-get-Layouts doc)
-          (if (and (/= (vla-get-ModelType lay) :vlax-true)
-                   (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
-            (vlax-for blk (vla-get-Block lay)
-              (if (IsTargetBlock blk)
-                (progn
-                  (setq currentTipo (GetAttValue blk "TIPO"))
-                  (setq currentElemento (GetAttValue blk "ELEMENTO"))
-                  ;; Só considerar se tipo está selecionado
-                  (setq i 1)
-                  (foreach item tipoList
-                    (if (and (or (null tipoSelecionado) (member (itoa i) tipoSelecionado))
-                             (= currentTipo item)
-                             currentElemento (/= currentElemento ""))
-                      (if (not (member currentElemento elementoList))
-                        (setq elementoList (cons currentElemento elementoList))
-                      )
-                    )
-                    (setq i (1+ i))
-                  )
-                )
-              )
-            )
-          )
-        )
-        (setq elementoList (reverse elementoList))
-        
-        (princ "\n\nELEMENTOS nos tipos selecionados:")
-        (setq i 1)
-        (foreach item elementoList
-          (princ (strcat "\n  " (itoa i) ". " item))
-          (setq i (1+ i))
-        )
-        
-        ;; Pedir prefixo para cada elemento
-        (setq tipoPrefixos '())
-        (princ "\n\nPrefixo para cada ELEMENTO:")
-        (foreach item elementoList
-          (setq prefixTipo (getstring T (strcat "\n  " item ": ")))
-          (setq tipoPrefixos (cons (cons item prefixTipo) tipoPrefixos))
-        )
-        (setq tipoPrefixos (reverse tipoPrefixos))
-        
-        ;; Aplicar
-        (setq count 0)
-        (vlax-for lay (vla-get-Layouts doc)
-          (if (and (/= (vla-get-ModelType lay) :vlax-true)
-                   (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
-            (vlax-for blk (vla-get-Block lay)
-              (if (IsTargetBlock blk)
-                (progn
-                  (setq desNum (GetAttValue blk "DES_NUM"))
-                  (setq currentTipo (GetAttValue blk "TIPO"))
-                  (setq currentElemento (GetAttValue blk "ELEMENTO"))
-                  (setq numPart (ExtractNumberFromDesNum desNum))
-                  (setq blkHandle (vla-get-Handle blk))
-                  
-                  ;; Verificar se tipo está selecionado
-                  (setq prefixTipo nil)
-                  (setq i 1)
-                  (foreach item tipoList
-                    (if (and (or (null tipoSelecionado) (member (itoa i) tipoSelecionado))
-                             (= currentTipo item))
-                      ;; Encontrar prefixo do elemento
-                      (foreach elem tipoPrefixos
-                        (if (= (car elem) currentElemento)
-                          (setq prefixTipo (cdr elem))
-                        )
-                      )
-                    )
-                    (setq i (1+ i))
-                  )
-                  
-                  (if prefixTipo
-                    (progn
-                      (setq newDesNum (strcat prefixTipo numPart))
-                      (UpdateSingleTag blkHandle "DES_NUM" newDesNum)
-                      (UpdateTabName blkHandle nil)
-                      (setq count (1+ count))
-                      (princ (strcat "\n  [" currentElemento "] " desNum " -> " newDesNum))
-                    )
-                  )
-                )
-              )
-            )
-          )
-        )
-        (vla-Regen doc acActiveViewport)
-        (alert (strcat "Prefixos por elemento aplicados a " (itoa count) " desenhos."))
-       )
-       
-       ;; TODOS do tipo
-       ((= modoTipo "2")
-        ;; Pedir prefixo para cada tipo selecionado
-        (setq tipoPrefixos '())
-        (princ "\n\nPrefixo para cada TIPO:")
-        (setq i 1)
-        (foreach item tipoList
-          (if (or (null tipoSelecionado) (member (itoa i) tipoSelecionado))
-            (progn
-              (setq prefixTipo (getstring T (strcat "\n  " item ": ")))
-              (setq tipoPrefixos (cons (cons item prefixTipo) tipoPrefixos))
-            )
-          )
-          (setq i (1+ i))
-        )
-        (setq tipoPrefixos (reverse tipoPrefixos))
-        
-        ;; Aplicar
-        (setq count 0)
-        (vlax-for lay (vla-get-Layouts doc)
-          (if (and (/= (vla-get-ModelType lay) :vlax-true)
-                   (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
-            (vlax-for blk (vla-get-Block lay)
-              (if (IsTargetBlock blk)
-                (progn
-                  (setq desNum (GetAttValue blk "DES_NUM"))
-                  (setq currentTipo (GetAttValue blk "TIPO"))
-                  (setq numPart (ExtractNumberFromDesNum desNum))
-                  (setq blkHandle (vla-get-Handle blk))
-                  
-                  ;; Encontrar prefixo do tipo
-                  (setq prefixTipo nil)
-                  (foreach item tipoPrefixos
-                    (if (= (car item) currentTipo)
-                      (setq prefixTipo (cdr item))
-                    )
-                  )
-                  
-                  (if prefixTipo
-                    (progn
-                      (setq newDesNum (strcat prefixTipo numPart))
-                      (UpdateSingleTag blkHandle "DES_NUM" newDesNum)
-                      (UpdateTabName blkHandle nil)
-                      (setq count (1+ count))
-                      (princ (strcat "\n  [" currentTipo "] " desNum " -> " newDesNum))
-                    )
-                  )
-                )
-              )
-            )
-          )
-        )
-        (vla-Regen doc acActiveViewport)
-        (alert (strcat "Prefixos por tipo aplicados a " (itoa count) " desenhos."))
-       )
-     )
-    )
-  )
-  (princ)
-)
-
-;; ============================================================================
-;; NUMERAR DESENHOS (Menu Layouts)
-;; Modos: 1) Geral (sequencial), 2) Por Tipo, 3) Por Elemento
-;; ============================================================================
-(defun NumerarDesenhos ( / doc prefix modoNumerar tipoList elementoList i item count numSeq desenhosGrupo blkHandle newDesNum currentTipo currentElemento targets targetList)
-  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
-  
-  (princ "\n\n=== NUMERAR DESENHOS ===")
-  (princ "\nRenumera DES_NUM: 01, 02, 03...")
-  
-  (setq prefix (getstring T "\nPrefixo (Enter para nenhum): "))
-  
-  (princ "\n\n--> Modo de numeracao:")
-  (princ "\n    1. GERAL (sequencial)")
-  (princ "\n    2. Por TIPO (reinicia em cada tipo)")
-  (princ "\n    3. Por ELEMENTO (reinicia em cada elemento)")
-  (initget "1 2 3")
-  (setq modoNumerar (getkword "\n    Opcao [1/2/3] <1>: "))
-  (if (null modoNumerar) (setq modoNumerar "1"))
-  
-  (cond
-    ;; GERAL - sequencial
-    ((= modoNumerar "1")
-     (princ "\n\n--> Quais desenhos? (Enter=TODOS, ou 1,2,5): ")
-     (setq targets (getstring T ""))
-     (setq targetList nil)
-     (if (/= targets "") (setq targetList (StrSplit targets ",")))
-     
-     (setq count 0)
-     (setq numSeq 1)
-     (vlax-for lay (vla-get-Layouts doc)
-       (if (and (/= (vla-get-ModelType lay) :vlax-true)
-                (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
-         (vlax-for blk (vla-get-Block lay)
-           (if (IsTargetBlock blk)
-             (progn
-               (setq blkHandle (vla-get-Handle blk))
-               (if (or (null targetList) 
-                       (IsNumberInList (ExtractNumberFromDesNum (GetAttValue blk "DES_NUM")) targetList))
-                 (progn
-                   (setq newDesNum (strcat prefix (FormatNum numSeq)))
-                   (UpdateSingleTag blkHandle "DES_NUM" newDesNum)
-                   (UpdateTabName blkHandle nil)
-                   (setq count (1+ count))
-                   (princ (strcat "\n  -> " newDesNum))
-                   (setq numSeq (1+ numSeq))
-                 )
-               )
-             )
-           )
-         )
-       )
-     )
-     (vla-Regen doc acActiveViewport)
-     (alert (strcat "Numerados " (itoa count) " desenhos."))
-    )
-    
-    ;; Por TIPO
-    ((= modoNumerar "2")
-     ;; Listar tipos
-     (setq tipoList '())
-     (vlax-for lay (vla-get-Layouts doc)
-       (if (and (/= (vla-get-ModelType lay) :vlax-true)
-                (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
-         (vlax-for blk (vla-get-Block lay)
-           (if (IsTargetBlock blk)
-             (progn
-               (setq currentTipo (GetAttValue blk "TIPO"))
-               (if (and currentTipo (/= currentTipo ""))
-                 (if (not (member currentTipo tipoList))
-                   (setq tipoList (cons currentTipo tipoList))
-                 )
-               )
-             )
-           )
-         )
-       )
-     )
-     (setq tipoList (reverse tipoList))
-     
-     (princ "\n\nTIPOS:")
-     (setq i 1)
-     (foreach item tipoList (princ (strcat "\n  " (itoa i) ". " item)) (setq i (1+ i)))
-     
-     (princ "\n\n--> Quais TIPOS? (Enter=TODOS): ")
-     (setq targets (getstring T ""))
-     (setq targetList nil)
-     (if (/= targets "") (setq targetList (StrSplit targets ",")))
-     
-     (setq count 0)
-     (setq i 1)
-     (foreach item tipoList
-       (if (or (null targetList) (member (itoa i) targetList))
-         (progn
-           (setq numSeq 1)
-           (setq desenhosGrupo '())
-           (vlax-for lay (vla-get-Layouts doc)
-             (if (and (/= (vla-get-ModelType lay) :vlax-true)
-                      (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
-               (vlax-for blk (vla-get-Block lay)
-                 (if (IsTargetBlock blk)
-                   (if (= (GetAttValue blk "TIPO") item)
-                     (setq desenhosGrupo (cons (vla-get-Handle blk) desenhosGrupo))
-                   )
-                 )
-               )
-             )
-           )
-           (setq desenhosGrupo (reverse desenhosGrupo))
-           (foreach blkHandle desenhosGrupo
-             (setq newDesNum (strcat prefix (FormatNum numSeq)))
-             (UpdateSingleTag blkHandle "DES_NUM" newDesNum)
-             (UpdateTabName blkHandle nil)
-             (setq count (1+ count))
-             (princ (strcat "\n  [" item "] -> " newDesNum))
-             (setq numSeq (1+ numSeq))
-           )
-         )
-       )
-       (setq i (1+ i))
-     )
-     (vla-Regen doc acActiveViewport)
-     (alert (strcat "Numerados " (itoa count) " desenhos por TIPO."))
-    )
-    
-    ;; Por ELEMENTO
-    ((= modoNumerar "3")
-     ;; Listar elementos
-     (setq elementoList '())
-     (vlax-for lay (vla-get-Layouts doc)
-       (if (and (/= (vla-get-ModelType lay) :vlax-true)
-                (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
-         (vlax-for blk (vla-get-Block lay)
-           (if (IsTargetBlock blk)
-             (progn
-               (setq currentElemento (GetAttValue blk "ELEMENTO"))
-               (if (and currentElemento (/= currentElemento ""))
-                 (if (not (member currentElemento elementoList))
-                   (setq elementoList (cons currentElemento elementoList))
-                 )
-               )
-             )
-           )
-         )
-       )
-     )
-     (setq elementoList (reverse elementoList))
-     
-     (princ "\n\nELEMENTOS:")
-     (setq i 1)
-     (foreach item elementoList (princ (strcat "\n  " (itoa i) ". " item)) (setq i (1+ i)))
-     
-     (princ "\n\n--> Quais ELEMENTOS? (Enter=TODOS): ")
-     (setq targets (getstring T ""))
-     (setq targetList nil)
-     (if (/= targets "") (setq targetList (StrSplit targets ",")))
-     
-     (setq count 0)
-     (setq i 1)
-     (foreach item elementoList
-       (if (or (null targetList) (member (itoa i) targetList))
-         (progn
-           (setq numSeq 1)
-           (setq desenhosGrupo '())
-           (vlax-for lay (vla-get-Layouts doc)
-             (if (and (/= (vla-get-ModelType lay) :vlax-true)
-                      (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
-               (vlax-for blk (vla-get-Block lay)
-                 (if (IsTargetBlock blk)
-                   (if (= (GetAttValue blk "ELEMENTO") item)
-                     (setq desenhosGrupo (cons (vla-get-Handle blk) desenhosGrupo))
-                   )
-                 )
-               )
-             )
-           )
-           (setq desenhosGrupo (reverse desenhosGrupo))
-           (foreach blkHandle desenhosGrupo
-             (setq newDesNum (strcat prefix (FormatNum numSeq)))
-             (UpdateSingleTag blkHandle "DES_NUM" newDesNum)
-             (UpdateTabName blkHandle nil)
-             (setq count (1+ count))
-             (princ (strcat "\n  [" item "] -> " newDesNum))
-             (setq numSeq (1+ numSeq))
-           )
-         )
-       )
-       (setq i (1+ i))
-     )
-     (vla-Regen doc acActiveViewport)
-     (alert (strcat "Numerados " (itoa count) " desenhos por ELEMENTO."))
     )
   )
   (princ)
@@ -1584,14 +1088,12 @@
   (setq loopSub T)
   (while loopSub
     (princ "\n\n   --- IMPORTAR LISTA DE DESENHOS ---")
-    (princ "\n   1. Importar CSV (por ID_CAD)")
-    (princ "\n   2. Importar CSV de Alterações (por Layout)")
+    (princ "\n   1. Importar CSV")
     (princ "\n   0. Voltar")
-    (initget "1 2 0")
-    (setq optSub (getkword "\n   Opcao [1/2/0]: "))
+    (initget "1 0")
+    (setq optSub (getkword "\n   Opcao [1/0]: "))
     (cond
       ((= optSub "1") (Run_ImportCSV))
-      ((= optSub "2") (Run_ImportCSV_ByLayout))
       ((= optSub "0") (setq loopSub nil))
       ((= optSub nil) (setq loopSub nil))
     )
@@ -1607,16 +1109,18 @@
     (princ "\n\n   --- GERIR LAYOUTS ---")
     (princ "\n   1. Gerar Novos (TEMPLATE)")
     (princ "\n   2. Ordenar Tabs")
-    (princ "\n   3. Numerar Desenhos")
+    (princ "\n   3. Numerar por TIPO")
+    (princ "\n   4. Numerar SEQUENCIAL")
     (princ "\n   5. Definir Formato TAB")
     (princ "\n   6. Aplicar Formato TAB")
     (princ "\n   0. Voltar")
-    (initget "1 2 3 5 6 0")
-    (setq optSub (getkword "\n   Opcao [1/2/3/5/6/0]: "))
+    (initget "1 2 3 4 5 6 0")
+    (setq optSub (getkword "\n   Opcao [1/2/3/4/5/6/0]: "))
     (cond
       ((= optSub "1") (Run_GenerateLayouts_FromTemplate_V26))
       ((= optSub "2") (Run_SortLayouts_Engine))
-      ((= optSub "3") (NumerarDesenhos))
+      ((= optSub "3") (AutoNumberByType))
+      ((= optSub "4") (AutoNumberSequential))
       ((= optSub "5") (DefinirFormatoTab))
       ((= optSub "6") (AplicarFormatoTab))
       ((= optSub "0") (setq loopSub nil))
@@ -1678,7 +1182,7 @@
 ;; APLICAR FORMATO TAB (Nova funcionalidade V38)
 ;; ============================================================================
 ;; Renomeia todos os tabs de acordo com o formato definido
-(defun AplicarFormatoTab ( / doc count newTabName oldName)
+(defun AplicarFormatoTab ( / doc count)
   (if (not *JSJ_TAB_FORMAT*)
     (alert "Erro: Nenhum formato definido!\n\nUse primeiro 'Definir Formato TAB' (opcao 5).")
     (progn
@@ -1699,7 +1203,7 @@
               (vlax-for blk (vla-get-Block lay)
                 (if (IsTargetBlock blk)
                   (progn
-                    (setq newTabName (BuildTabName blk *JSJ_TAB_FORMAT* nil))
+                    (setq newTabName (BuildTabName blk *JSJ_TAB_FORMAT*))
                     (if (and newTabName (/= newTabName ""))
                       (progn
                         (setq oldName (vla-get-Name lay))
@@ -2283,153 +1787,6 @@
 (defun Run_GenerateCSV ( / doc path dwgName defaultName csvFile fileDes layoutList dataList sortMode sortOrder valTipo valNum valTit maxRev revLetra revData revDesc valHandle duplicates continueExport userChoice dateErrors allDateErrors layName) (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) (setq path (getvar "DWGPREFIX")) (setq dwgName (GetDWGName)) (princ "\nA recolher dados (Ignorando TEMPLATE)... ") (setq dataList '()) (setq allDateErrors "") (setq layoutList (GetLayoutsRaw doc)) (foreach lay layoutList (vlax-for blk (vla-get-Block lay) (if (IsTargetBlock blk) (progn (setq valTipo (CleanCSV (GetAttValue blk "TIPO"))) (setq valNum (CleanCSV (GetAttValue blk "DES_NUM"))) (setq valTit (CleanCSV (GetAttValue blk "TITULO"))) (setq maxRev (GetMaxRevision blk)) (setq revLetra (CleanCSV (car maxRev))) (setq revData (CleanCSV (cadr maxRev))) (setq revDesc (CleanCSV (caddr maxRev))) (setq valHandle (vla-get-Handle blk)) (setq layName (vla-get-Name lay)) (setq dateErrors (ValidateRevisionDates blk)) (if dateErrors (setq allDateErrors (strcat allDateErrors "Des " valNum " (" layName "): " dateErrors "\n"))) (setq dataList (cons (list dwgName valTipo valNum valTit revLetra revData revDesc valHandle layName) dataList)))))) (setq duplicates (FindDuplicateDES_NUM dataList)) (setq continueExport T) (if duplicates (progn (alert (strcat "AVISO: DES_NUM DUPLICADOS!\n\n" duplicates)) (initget "Sim Nao") (setq userChoice (getkword "\nContinuar exportação? [Sim/Nao] <Nao>: ")) (if (or (null userChoice) (= userChoice "Nao")) (setq continueExport nil)))) (if (and continueExport (/= allDateErrors "")) (progn (alert (strcat "AVISO: DATAS DE REVISÃO INCOERENTES!\n\n" allDateErrors)) (initget "Sim Nao") (setq userChoice (getkword "\nContinuar exportação? [Sim/Nao] <Sim>: ")) (if (= userChoice "Nao") (setq continueExport nil)))) (if continueExport (progn (setq defaultName (strcat path dwgName "_Lista.csv")) (setq csvFile (getfiled "Guardar Lista CSV" defaultName "csv" 1)) (if csvFile (progn (initget "1 2") (setq sortMode (getkword "\nOrdenar por? [1] Tipo / [2] Número <2>: ")) (if (not sortMode) (setq sortMode "2")) (cond ((= sortMode "1") (setq dataList (vl-sort dataList '(lambda (a b) (if (= (strcase (nth 1 a)) (strcase (nth 1 b))) (< (atoi (nth 2 a)) (atoi (nth 2 b))) (< (strcase (nth 1 a)) (strcase (nth 1 b)))))))) ((= sortMode "2") (setq dataList (vl-sort dataList '(lambda (a b) (< (atoi (nth 2 a)) (atoi (nth 2 b)))))))) (setq fileDes (open csvFile "w")) (if fileDes (progn (write-line "DWG_SOURCE;TIPO;NÚMERO DE DESENHO;TITULO;REVISAO;DATA;DESCRICAO;ID_CAD" fileDes) (foreach row dataList (write-line (strcat (nth 0 row) ";" (nth 1 row) ";" (nth 2 row) ";" (nth 3 row) ";" (nth 4 row) ";" (nth 5 row) ";" (nth 6 row) ";" (nth 7 row)) fileDes)) (close fileDes) (alert (strcat "Sucesso! Ficheiro criado:\n" csvFile))) (alert "Erro: Ficheiro aberto?"))) (princ "\nCancelado."))) (princ "\nExportação cancelada.")) (princ))
 ;; Função auxiliar: encontra DES_NUM duplicados e retorna string formatada
 (defun FindDuplicateDES_NUM (dataList / numList duplicates item num layName seen result) (setq seen '() duplicates '()) (foreach item dataList (setq num (nth 2 item)) (setq layName (nth 8 item)) (if (assoc num seen) (setq duplicates (cons (strcat "DES_NUM " num " -> Layout: " layName) duplicates)) (setq seen (cons (cons num layName) seen)))) (if duplicates (progn (setq result "") (foreach dup (reverse duplicates) (setq result (strcat result dup "\n"))) result) nil))
-
-;; ============================================================================
-;; IMPORTAR CSV DE ALTERAÇÕES (por nome de Layout)
-;; ============================================================================
-;; Formato esperado: TAG DO LAYOUT;CLIENTE;OBRA;LOCALIZAÇÃO;ESPECIALIDADE;FASE;
-;;                   DATA 1ª EMISSÃO;PROJETOU;NUMERO DE DESENHO;TIPO;ELEMENTO;TITULO;REVISÃO
-(defun Run_ImportCSV_ByLayout ( / doc path csvFile fileDes line parts headers headerMap
-                                  layoutName cliente obra localizacao especialidade fase
-                                  data projetou desNum tipo elemento titulo revisao
-                                  countUpdates countNotFound lay blk handle foundBlock)
-  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
-  (setq path (getvar "DWGPREFIX"))
-  (setq csvFile (getfiled "Selecione o CSV de Alterações" path "csv" 4))
-  
-  (if (and csvFile (findfile csvFile))
-    (progn
-      (setq fileDes (open csvFile "r"))
-      (if fileDes
-        (progn
-          (princ "\nA processar CSV de alterações...")
-          (setq countUpdates 0)
-          (setq countNotFound 0)
-          
-          ;; Ler header e criar mapeamento de colunas
-          (setq line (read-line fileDes))
-          (setq headers (StrSplit line ";"))
-          (setq headerMap (BuildHeaderMap headers))
-          
-          ;; Processar cada linha
-          (while (setq line (read-line fileDes))
-            (setq parts (StrSplit line ";"))
-            
-            ;; Obter valores pelo mapeamento de headers
-            (setq layoutName (GetCSVValue parts headerMap "TAG DO LAYOUT"))
-            (if (or (null layoutName) (= layoutName ""))
-              (setq layoutName (GetCSVValue parts headerMap "LAYOUT_NAME"))
-            )
-            
-            (if (and layoutName (/= layoutName ""))
-              (progn
-                ;; Obter restantes valores
-                (setq cliente (GetCSVValue parts headerMap "CLIENTE"))
-                (setq obra (GetCSVValue parts headerMap "OBRA"))
-                (setq localizacao (GetCSVValue parts headerMap "LOCALIZAÇÃO"))
-                (if (null localizacao) (setq localizacao (GetCSVValue parts headerMap "LOCALIZACAO")))
-                (setq especialidade (GetCSVValue parts headerMap "ESPECIALIDADE"))
-                (setq fase (GetCSVValue parts headerMap "FASE"))
-                (setq data (GetCSVValue parts headerMap "DATA 1ª EMISSÃO"))
-                (if (null data) (setq data (GetCSVValue parts headerMap "DATA")))
-                (setq projetou (GetCSVValue parts headerMap "PROJETOU"))
-                (setq desNum (GetCSVValue parts headerMap "NUMERO DE DESENHO"))
-                (if (null desNum) (setq desNum (GetCSVValue parts headerMap "DES_NUM")))
-                (setq tipo (GetCSVValue parts headerMap "TIPO"))
-                (setq elemento (GetCSVValue parts headerMap "ELEMENTO"))
-                (setq titulo (GetCSVValue parts headerMap "TITULO"))
-                (setq revisao (GetCSVValue parts headerMap "REVISÃO"))
-                (if (null revisao) (setq revisao (GetCSVValue parts headerMap "R")))
-                
-                ;; Procurar bloco pelo nome do layout
-                (setq foundBlock nil)
-                (setq handle nil)
-                (vlax-for lay (vla-get-Layouts doc)
-                  (if (and (not foundBlock)
-                           (= (strcase (vla-get-Name lay)) (strcase layoutName)))
-                    (vlax-for blk (vla-get-Block lay)
-                      (if (and (not foundBlock) (IsTargetBlock blk))
-                        (progn
-                          (setq foundBlock blk)
-                          (setq handle (vla-get-Handle blk))
-                        )
-                      )
-                    )
-                  )
-                )
-                
-                ;; Atualizar bloco se encontrado
-                (if (and foundBlock handle)
-                  (progn
-                    (if (and cliente (/= cliente "")) (UpdateSingleTag handle "CLIENTE" cliente))
-                    (if (and obra (/= obra "")) (UpdateSingleTag handle "OBRA" obra))
-                    (if (and localizacao (/= localizacao "")) (UpdateSingleTag handle "LOCALIZACAO" localizacao))
-                    (if (and especialidade (/= especialidade "")) (UpdateSingleTag handle "ESPECIALIDADE" especialidade))
-                    (if (and fase (/= fase "")) (UpdateSingleTag handle "FASE" fase))
-                    (if (and data (/= data "")) (UpdateSingleTag handle "DATA" data))
-                    (if (and projetou (/= projetou "")) (UpdateSingleTag handle "PROJETOU" projetou))
-                    (if (and desNum (/= desNum "")) 
-                      (progn
-                        (UpdateSingleTag handle "DES_NUM" desNum)
-                        (UpdateTabName handle nil)
-                      )
-                    )
-                    (if (and tipo (/= tipo "")) (UpdateSingleTag handle "TIPO" tipo))
-                    (if (and elemento (/= elemento "")) (UpdateSingleTag handle "ELEMENTO" elemento))
-                    (if (and titulo (/= titulo "")) (UpdateSingleTag handle "TITULO" titulo))
-                    ;; Nota: REVISÃO não é atualizada diretamente - usar Emitir Revisão
-                    
-                    (princ ".")
-                    (setq countUpdates (1+ countUpdates))
-                  )
-                  (progn
-                    (princ (strcat "\n  [!] Layout não encontrado: " layoutName))
-                    (setq countNotFound (1+ countNotFound))
-                  )
-                )
-              )
-            )
-          )
-          
-          (close fileDes)
-          (vla-Regen doc acActiveViewport)
-          
-          (if (> countUpdates 0)
-            (WriteLog (strcat "IMPORTAR CSV ALTERAÇÕES: " (itoa countUpdates) " desenhos atualizados"))
-          )
-          
-          (alert (strcat "Importação concluída!\n\n"
-                        "Desenhos atualizados: " (itoa countUpdates) "\n"
-                        "Layouts não encontrados: " (itoa countNotFound)))
-        )
-        (alert "Erro ao abrir ficheiro.")
-      )
-    )
-    (princ "\nCancelado.")
-  )
-  (princ)
-)
-
-;; Função auxiliar: construir mapa de headers (nome -> índice)
-(defun BuildHeaderMap (headers / map idx header)
-  (setq map '())
-  (setq idx 0)
-  (foreach header headers
-    (setq map (cons (cons (strcase (vl-string-trim " " header)) idx) map))
-    (setq idx (1+ idx))
-  )
-  map
-)
-
-;; Função auxiliar: obter valor do CSV pelo nome do header
-(defun GetCSVValue (parts headerMap headerName / idx)
-  (setq idx (cdr (assoc (strcase headerName) headerMap)))
-  (if (and idx (< idx (length parts)))
-    (vl-string-trim " " (nth idx parts))
-    nil
-  )
-)
-
 ;; Run_ImportCSV - Importar CSV com formato: DWG_SOURCE;TIPO;DES_NUM;ELEMENTO;TITULO;REV;DATA;DESC;ID_CAD
 (defun Run_ImportCSV ( / doc path defaultName csvFile fileDes line parts valDwgSource valTipo valNum valElemento valTit valRev valData valDesc valHandle countUpdates) 
   (setq doc (vla-get-ActiveDocument (vlax-get-acad-object))) 
@@ -2675,7 +2032,7 @@
 ;; MENSAGEM DE CARREGAMENTO
 ;; ============================================================================
 (princ "\n========================================")
-(princ "\n GESTAO DESENHOS JSJ V39.8")
+(princ "\n GESTAO DESENHOS JSJ V39.7")
 (princ "\n========================================")
 (princ "\n Comandos disponiveis:")
 (princ "\n   GESTAODESENHOSJSJ - Menu principal")

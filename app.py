@@ -4,11 +4,27 @@ Streamlit app - UI for JSJ Drawing Management LPP Sync.
 import streamlit as st
 import pandas as pd
 from pathlib import Path
+from datetime import datetime, date
 
-from db import get_connection, criar_tabelas, get_all_desenhos, get_revisoes_by_desenho_id, get_desenho_by_layout, get_dwg_list, delete_all_desenhos, delete_desenhos_by_dwg, delete_desenhos_by_tipo, delete_desenhos_by_elemento, delete_desenho_by_layout, get_db_stats, get_all_desenhos_with_revisoes, get_unique_tipos, get_unique_elementos, get_all_layout_names
+from db import (
+    get_connection, criar_tabelas, get_all_desenhos, get_revisoes_by_desenho_id, 
+    get_desenho_by_layout, get_dwg_list, delete_all_desenhos, delete_desenhos_by_dwg, 
+    delete_desenhos_by_tipo, delete_desenhos_by_elemento, delete_desenho_by_layout, 
+    get_db_stats, get_all_desenhos_with_revisoes, get_unique_tipos, get_unique_elementos, 
+    get_all_layout_names, update_estado_interno, update_estado_e_comentario,
+    get_historico_comentarios, get_desenhos_by_estado, get_desenhos_em_atraso,
+    get_desenho_by_id, get_stats_by_estado, ESTADOS_VALIDOS
+)
 from json_importer import import_all_json
 from csv_importer import import_all_csv, import_single_csv
 from lpp_builder import build_lpp_from_db
+
+# Estado interno colors and labels
+ESTADO_CONFIG = {
+    'projeto': {'label': '📋 Projeto', 'color': '#6c757d', 'bg': '#f8f9fa'},
+    'needs_revision': {'label': '⚠️ Precisa Revisão', 'color': '#dc3545', 'bg': '#fff3cd'},
+    'built': {'label': '✅ Construído', 'color': '#28a745', 'bg': '#d4edda'}
+}
 
 
 # Page config
@@ -263,6 +279,17 @@ def load_data():
     conn.close()
     if desenhos:
         df = pd.DataFrame(desenhos)
+        # Ensure estado_interno has default value
+        if 'estado_interno' not in df.columns:
+            df['estado_interno'] = 'projeto'
+        df['estado_interno'] = df['estado_interno'].fillna('projeto')
+        # Ensure other internal fields exist
+        if 'comentario' not in df.columns:
+            df['comentario'] = ''
+        if 'data_limite' not in df.columns:
+            df['data_limite'] = ''
+        if 'responsavel' not in df.columns:
+            df['responsavel'] = ''
         return df
     return pd.DataFrame()
 
@@ -271,10 +298,67 @@ df = load_data()
 if df.empty:
     st.warning("⚠️ Nenhum desenho na base de dados. Importe JSON ou CSV primeiro.")
 else:
-    st.success(f"✅ **{len(df)} desenhos** na base de dados")
+    # Get estado stats for display
+    conn = get_connection()
+    estado_stats = get_stats_by_estado(conn)
+    conn.close()
+    
+    # Status bar with estado info
+    col_stat1, col_stat2, col_stat3, col_stat4, col_stat5 = st.columns(5)
+    with col_stat1:
+        st.metric("Total", len(df))
+    with col_stat2:
+        st.metric("📋 Projeto", estado_stats.get('projeto', 0))
+    with col_stat3:
+        st.metric("⚠️ Precisa Revisão", estado_stats.get('needs_revision', 0))
+    with col_stat4:
+        st.metric("✅ Construído", estado_stats.get('built', 0))
+    with col_stat5:
+        em_atraso = estado_stats.get('em_atraso', 0)
+        if em_atraso > 0:
+            st.metric("🚨 Em Atraso", em_atraso, delta=f"-{em_atraso}", delta_color="inverse")
+        else:
+            st.metric("🚨 Em Atraso", 0)
+    
+    st.markdown("---")
     
     # Filters
     st.subheader("🔍 Filtros")
+    
+    # Estado filter row (quick buttons)
+    st.markdown("**Estado Interno:**")
+    estado_col1, estado_col2, estado_col3, estado_col4, estado_col5 = st.columns(5)
+    
+    if 'estado_filter' not in st.session_state:
+        st.session_state.estado_filter = 'Todos'
+    
+    with estado_col1:
+        if st.button("🔄 Todos", use_container_width=True, 
+                     type="primary" if st.session_state.estado_filter == 'Todos' else "secondary"):
+            st.session_state.estado_filter = 'Todos'
+            st.rerun()
+    with estado_col2:
+        if st.button("📋 Projeto", use_container_width=True,
+                     type="primary" if st.session_state.estado_filter == 'projeto' else "secondary"):
+            st.session_state.estado_filter = 'projeto'
+            st.rerun()
+    with estado_col3:
+        if st.button("⚠️ Precisa Revisão", use_container_width=True,
+                     type="primary" if st.session_state.estado_filter == 'needs_revision' else "secondary"):
+            st.session_state.estado_filter = 'needs_revision'
+            st.rerun()
+    with estado_col4:
+        if st.button("✅ Construído", use_container_width=True,
+                     type="primary" if st.session_state.estado_filter == 'built' else "secondary"):
+            st.session_state.estado_filter = 'built'
+            st.rerun()
+    with estado_col5:
+        if st.button("🚨 Em Atraso", use_container_width=True,
+                     type="primary" if st.session_state.estado_filter == 'em_atraso' else "secondary"):
+            st.session_state.estado_filter = 'em_atraso'
+            st.rerun()
+    
+    # Other filters
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
@@ -294,6 +378,19 @@ else:
     
     # Apply filters
     filtered_df = df.copy()
+    
+    # Estado filter (applied first)
+    if st.session_state.estado_filter == 'em_atraso':
+        # Filter for overdue items (needs_revision with past deadline)
+        today = datetime.now().strftime('%Y-%m-%d')
+        filtered_df = filtered_df[
+            (filtered_df['estado_interno'] == 'needs_revision') & 
+            (filtered_df['data_limite'].notna()) & 
+            (filtered_df['data_limite'] != '') &
+            (filtered_df['data_limite'] < today)
+        ]
+    elif st.session_state.estado_filter != 'Todos':
+        filtered_df = filtered_df[filtered_df['estado_interno'] == st.session_state.estado_filter]
     
     if tipo_filter != "Todos":
         filtered_df = filtered_df[filtered_df['tipo_display'] == tipo_filter]
@@ -333,6 +430,10 @@ else:
         'r_data': 'Data Revisão',
         'r_desc': 'Descrição Revisão',
         'data': 'Data 1ª Emissão',
+        'estado_interno': '🔖 Estado',
+        'comentario': '💬 Comentário',
+        'data_limite': '📅 Data Limite',
+        'responsavel': '👤 Responsável',
         'cliente': 'Cliente',
         'obra': 'Obra',
         'localizacao': 'Localização',
@@ -342,8 +443,8 @@ else:
         'dwg_name': 'Ficheiro DWG'
     }
     
-    # Default columns to show
-    default_cols = ['des_num', 'layout_name', 'tipo_display', 'elemento', 'titulo', 'r', 'r_data', 'r_desc', 'cliente']
+    # Default columns to show (now includes estado)
+    default_cols = ['estado_interno', 'des_num', 'layout_name', 'tipo_display', 'elemento', 'titulo', 'r', 'comentario', 'data_limite']
     
     # Column selector
     if show_column_selector:
@@ -371,15 +472,8 @@ else:
         else:
             view_cols = [col for col in default_cols if col in filtered_df.columns]
     
-    # Editable columns (fields that can be changed and synced back to AutoCAD)
-    edit_cols = [
-        'layout_name', 'cliente', 'obra', 'localizacao', 'especialidade', 'fase',
-        'data', 'projetou', 'des_num', 'tipo_display', 'elemento_key', 'elemento_titulo', 'r'
-    ]
-    
-    # Ensure columns exist
+    # Ensure columns exist in DataFrame
     view_cols = [col for col in view_cols if col in filtered_df.columns]
-    edit_cols = [col for col in edit_cols if col in filtered_df.columns]
     
     # ========================================
     # ORDENAÇÃO (sempre visível, fora do modo edição)
@@ -542,23 +636,232 @@ else:
     # ========================================
     st.markdown("---")
     
-    # Rename columns for display
+    # Helper function to format estado for display
+    def format_estado(estado):
+        """Format estado with emoji and color"""
+        cfg = ESTADO_CONFIG.get(estado, ESTADO_CONFIG['projeto'])
+        return cfg['label']
+    
+    # Helper to check if overdue
+    def is_overdue(row):
+        """Check if a drawing is overdue"""
+        if row.get('estado_interno') == 'needs_revision':
+            data_limite = row.get('data_limite')
+            if data_limite and data_limite != '':
+                try:
+                    return data_limite < datetime.now().strftime('%Y-%m-%d')
+                except:
+                    pass
+        return False
+    
+    # Prepare display dataframe with formatted estado
     display_df = sorted_df[view_cols].copy()
+    
+    # Format estado_interno column if present
+    if 'estado_interno' in display_df.columns:
+        display_df['estado_interno'] = display_df['estado_interno'].apply(format_estado)
+    
+    # Rename columns for display
     display_df.columns = [all_columns.get(col, col) for col in view_cols]
     
     if not edit_mode:
-        # Normal view mode - mostra tabela ordenada
-        st.dataframe(
+        # Normal view mode with row selection
+        st.markdown("**💡 Clique numa linha para ver detalhes e editar estado/comentários**")
+        
+        # Use data_editor with selection for row clicks
+        selection = st.dataframe(
             display_df,
             use_container_width=True,
-            height=400
+            height=400,
+            on_select="rerun",
+            selection_mode="single-row"
         )
+        
+        # Handle row selection - show detail modal
+        if selection and selection.selection and selection.selection.rows:
+            selected_idx = selection.selection.rows[0]
+            selected_row = sorted_df.iloc[selected_idx]
+            desenho_id = selected_row.get('id')
+            
+            if desenho_id:
+                st.markdown("---")
+                st.subheader(f"📋 Detalhes: {selected_row.get('layout_name', '')}")
+                
+                # Get full desenho data with history
+                conn = get_connection()
+                desenho = get_desenho_by_id(conn, desenho_id)
+                revisoes = get_revisoes_by_desenho_id(conn, desenho_id)
+                historico = get_historico_comentarios(conn, desenho_id)
+                conn.close()
+                
+                if desenho:
+                    # Three columns: Info, Estado/Comentário, Histórico
+                    col_info, col_estado = st.columns([1, 1])
+                    
+                    with col_info:
+                        st.markdown("**📐 Informação do Desenho:**")
+                        st.text(f"Layout: {desenho.get('layout_name', '-')}")
+                        st.text(f"DWG: {desenho.get('dwg_name', '-')}")
+                        st.text(f"DES_NUM: {desenho.get('des_num', '-')}")
+                        st.text(f"TIPO: {desenho.get('tipo_display', '-')}")
+                        st.text(f"ELEMENTO: {desenho.get('elemento_key', '-')}")
+                        st.text(f"TÍTULO: {desenho.get('titulo', '-')}")
+                        st.text(f"Revisão: {desenho.get('r', '-')} ({desenho.get('r_data', '-')})")
+                        st.text(f"Data 1ª Emissão: {desenho.get('data', '-')}")
+                        st.text(f"Cliente: {desenho.get('cliente', '-')}")
+                        
+                        # Revision history
+                        st.markdown("---")
+                        st.markdown(f"**📜 Histórico de Revisões CAD:**")
+                        if revisoes:
+                            for rev in revisoes:
+                                st.text(f"  {rev.get('rev_code', '-')}: {rev.get('rev_date', '-')} - {rev.get('rev_desc', '-')}")
+                        else:
+                            st.caption("Sem histórico de revisões registado")
+                    
+                    with col_estado:
+                        st.markdown("**🔖 Estado Interno (controlo de projeto):**")
+                        
+                        # Current state with color
+                        estado_atual = desenho.get('estado_interno') or 'projeto'
+                        cfg = ESTADO_CONFIG.get(estado_atual, ESTADO_CONFIG['projeto'])
+                        st.markdown(f"Estado atual: **{cfg['label']}**")
+                        
+                        # State selector
+                        estado_options = ['projeto', 'needs_revision', 'built']
+                        estado_labels = {e: ESTADO_CONFIG[e]['label'] for e in estado_options}
+                        
+                        novo_estado = st.selectbox(
+                            "Alterar estado para:",
+                            estado_options,
+                            index=estado_options.index(estado_atual),
+                            format_func=lambda x: estado_labels[x],
+                            key=f"estado_select_{desenho_id}"
+                        )
+                        
+                        st.markdown("---")
+                        st.markdown("**💬 Comentário Interno:**")
+                        
+                        # Comment text area
+                        comentario_atual = desenho.get('comentario') or ''
+                        novo_comentario = st.text_area(
+                            "Comentário:",
+                            value=comentario_atual,
+                            height=100,
+                            key=f"comentario_{desenho_id}"
+                        )
+                        
+                        # Deadline date
+                        data_limite_atual = desenho.get('data_limite') or ''
+                        
+                        # Parse existing date or use None
+                        default_date = None
+                        if data_limite_atual:
+                            try:
+                                default_date = datetime.strptime(data_limite_atual, '%Y-%m-%d').date()
+                            except:
+                                pass
+                        
+                        nova_data_limite = st.date_input(
+                            "📅 Data Limite de Revisão:",
+                            value=default_date,
+                            key=f"data_limite_{desenho_id}"
+                        )
+                        
+                        # Responsible person
+                        responsavel_atual = desenho.get('responsavel') or ''
+                        novo_responsavel = st.text_input(
+                            "👤 Responsável:",
+                            value=responsavel_atual,
+                            key=f"responsavel_{desenho_id}"
+                        )
+                        
+                        # Save button
+                        if st.button("💾 Guardar Estado e Comentário", type="primary", 
+                                     use_container_width=True, key=f"save_estado_{desenho_id}"):
+                            conn = get_connection()
+                            
+                            # Format date
+                            data_limite_str = nova_data_limite.strftime('%Y-%m-%d') if nova_data_limite else None
+                            
+                            success = update_estado_e_comentario(
+                                conn,
+                                desenho_id,
+                                estado=novo_estado,
+                                comentario=novo_comentario,
+                                data_limite=data_limite_str,
+                                responsavel=novo_responsavel,
+                                autor="Streamlit User"
+                            )
+                            conn.close()
+                            
+                            if success:
+                                st.success("✅ Estado e comentário guardados!")
+                                st.rerun()
+                            else:
+                                st.error("❌ Erro ao guardar")
+                        
+                        # Show if overdue
+                        if estado_atual == 'needs_revision' and data_limite_atual:
+                            try:
+                                if data_limite_atual < datetime.now().strftime('%Y-%m-%d'):
+                                    st.error("🚨 **ATENÇÃO: Esta revisão está em atraso!**")
+                            except:
+                                pass
+                    
+                    # Comment history
+                    if historico:
+                        st.markdown("---")
+                        with st.expander("📜 Histórico de Alterações Internas"):
+                            for h in historico:
+                                created = h.get('created_at', '')[:16] if h.get('created_at') else '-'
+                                estado_ant = ESTADO_CONFIG.get(h.get('estado_anterior', ''), {}).get('label', h.get('estado_anterior', '-'))
+                                estado_nov = ESTADO_CONFIG.get(h.get('estado_novo', ''), {}).get('label', h.get('estado_novo', '-'))
+                                
+                                st.markdown(f"**{created}** - {estado_ant} → {estado_nov}")
+                                if h.get('comentario'):
+                                    st.caption(f"Comentário: {h.get('comentario')}")
+                                if h.get('data_limite'):
+                                    st.caption(f"Data limite: {h.get('data_limite')}")
+                                if h.get('autor'):
+                                    st.caption(f"Por: {h.get('autor')}")
+                                st.markdown("---")
+                                
     else:
         # Edit mode with data_editor
-        st.info("📝 **Modo Edição Ativo** - Edite os campos diretamente na tabela.")
+        st.info("📝 **Modo Edição Ativo** - Edite os campos diretamente na tabela. O campo Estado é editável (interno, não vai para CSV).")
         
-        # Prepare editable dataframe (usa sorted_df para manter ordenação)
-        edit_df = sorted_df[edit_cols].copy()
+        # Use the same columns as view mode, but ensure we have id and layout_name for updates
+        edit_view_cols = view_cols.copy()
+        
+        # Ensure layout_name is in columns (needed for updates)
+        if 'layout_name' not in edit_view_cols:
+            edit_view_cols.insert(0, 'layout_name')
+        
+        # Ensure id is available for estado updates
+        if 'id' not in edit_view_cols:
+            edit_view_cols.append('id')
+        
+        # Prepare editable dataframe with same columns as view
+        edit_df = sorted_df[[c for c in edit_view_cols if c in sorted_df.columns]].copy()
+        
+        # Column config for data_editor - estado_interno as dropdown
+        column_config = {
+            'id': None,  # Hide id column
+            'estado_interno': st.column_config.SelectboxColumn(
+                "🔖 Estado",
+                options=['projeto', 'needs_revision', 'built'],
+                required=True,
+                default='projeto'
+            ),
+            'layout_name': st.column_config.TextColumn("Layout", disabled=True),
+            'comentario': st.column_config.TextColumn("💬 Comentário", width="medium"),
+            'data_limite': st.column_config.TextColumn("📅 Data Limite"),
+            'responsavel': st.column_config.TextColumn("👤 Responsável"),
+        }
+        
+        # Rename columns for display (except special ones)
+        display_cols_map = {col: all_columns.get(col, col) for col in edit_df.columns if col != 'id'}
         
         # Use data_editor for editing
         edited_df = st.data_editor(
@@ -566,7 +869,9 @@ else:
             use_container_width=True,
             height=400,
             num_rows="fixed",
-            key="data_editor"
+            column_config=column_config,
+            key="data_editor",
+            hide_index=True
         )
         
         # Botões de guardar
@@ -580,19 +885,35 @@ else:
                     
                     updated_count = 0
                     layout_updated_count = 0
+                    estado_updated_count = 0
                     
                     for idx, row in edited_df.iterrows():
+                        desenho_id = row.get('id') if pd.notna(row.get('id')) else None
                         old_layout_name = str(row['layout_name']) if pd.notna(row['layout_name']) else ''
-                        new_des_num = str(row.get('des_num', '')) if pd.notna(row.get('des_num')) else ''
-                        new_r = str(row.get('r', '')) if pd.notna(row.get('r')) else ''
                         
-                        cursor.execute("SELECT des_num, r FROM desenhos WHERE layout_name = ?", (old_layout_name,))
+                        if not old_layout_name:
+                            continue
+                        
+                        # Get original values from DB
+                        cursor.execute("SELECT des_num, r, estado_interno FROM desenhos WHERE layout_name = ?", (old_layout_name,))
                         result = cursor.fetchone()
-                        old_des_num = str(result[0]) if result and result[0] else ''
-                        old_r = str(result[1]) if result and len(result) > 1 and result[1] else ''
+                        if not result:
+                            continue
+                            
+                        old_des_num = str(result[0]) if result[0] else ''
+                        old_r = str(result[1]) if result[1] else ''
+                        old_estado = result[2] or 'projeto'
+                        
+                        new_des_num = str(row.get('des_num', '')) if pd.notna(row.get('des_num')) else old_des_num
+                        new_r = str(row.get('r', '')) if pd.notna(row.get('r')) else old_r
+                        new_estado = row.get('estado_interno', old_estado) if pd.notna(row.get('estado_interno')) else old_estado
+                        new_comentario = str(row.get('comentario', '')) if pd.notna(row.get('comentario')) else None
+                        new_data_limite = str(row.get('data_limite', '')) if pd.notna(row.get('data_limite')) else None
+                        new_responsavel = str(row.get('responsavel', '')) if pd.notna(row.get('responsavel')) else None
                         
                         new_layout_name = old_layout_name
                         
+                        # Update layout_name if DES_NUM or R changed
                         if old_layout_name and '-' in old_layout_name:
                             parts = old_layout_name.split('-')
                             if len(parts) >= 5:
@@ -618,21 +939,51 @@ else:
                                     new_layout_name = '-'.join(parts)
                                     layout_updated_count += 1
                         
-                        cursor.execute("""
-                            UPDATE desenhos SET
-                                layout_name = ?, cliente = ?, obra = ?, localizacao = ?,
-                                especialidade = ?, fase = ?, data = ?, projetou = ?,
-                                des_num = ?, tipo_display = ?, elemento_key = ?,
-                                elemento_titulo = ?, r = ?
+                        # Track estado changes
+                        if old_estado != new_estado:
+                            estado_updated_count += 1
+                        
+                        # Build dynamic UPDATE based on available columns
+                        update_fields = ['layout_name = ?', 'updated_at = ?']
+                        update_values = [new_layout_name, datetime.now().isoformat()]
+                        
+                        # Add CAD fields if present in edit columns
+                        field_mapping = {
+                            'cliente': 'cliente', 'obra': 'obra', 'localizacao': 'localizacao',
+                            'especialidade': 'especialidade', 'fase': 'fase', 'data': 'data',
+                            'projetou': 'projetou', 'des_num': 'des_num', 'tipo_display': 'tipo_display',
+                            'elemento_key': 'elemento_key', 'elemento_titulo': 'elemento_titulo', 'r': 'r'
+                        }
+                        
+                        for col, db_field in field_mapping.items():
+                            if col in edited_df.columns:
+                                val = row.get(col, '')
+                                if pd.notna(val):
+                                    update_fields.append(f'{db_field} = ?')
+                                    update_values.append(str(val))
+                        
+                        # Always update internal state fields
+                        update_fields.append('estado_interno = ?')
+                        update_values.append(new_estado)
+                        
+                        if 'comentario' in edited_df.columns:
+                            update_fields.append('comentario = ?')
+                            update_values.append(new_comentario if new_comentario else '')
+                        
+                        if 'data_limite' in edited_df.columns:
+                            update_fields.append('data_limite = ?')
+                            update_values.append(new_data_limite if new_data_limite else '')
+                        
+                        if 'responsavel' in edited_df.columns:
+                            update_fields.append('responsavel = ?')
+                            update_values.append(new_responsavel if new_responsavel else '')
+                        
+                        update_values.append(old_layout_name)
+                        
+                        cursor.execute(f"""
+                            UPDATE desenhos SET {', '.join(update_fields)}
                             WHERE layout_name = ?
-                        """, (
-                            new_layout_name, row.get('cliente', ''), row.get('obra', ''),
-                            row.get('localizacao', ''), row.get('especialidade', ''),
-                            row.get('fase', ''), row.get('data', ''), row.get('projetou', ''),
-                            new_des_num, row.get('tipo_display', ''), row.get('elemento_key', ''),
-                            row.get('elemento_titulo', ''), new_r if new_r else row.get('r', ''),
-                            old_layout_name
-                        ))
+                        """, update_values)
                         updated_count += 1
                     
                     conn.commit()
@@ -641,6 +992,8 @@ else:
                     msg = f"✅ {updated_count} registos atualizados!"
                     if layout_updated_count > 0:
                         msg += f" ({layout_updated_count} layouts renomeados)"
+                    if estado_updated_count > 0:
+                        msg += f" ({estado_updated_count} estados alterados)"
                     st.success(msg)
                     st.rerun()
                     
@@ -648,7 +1001,9 @@ else:
                     st.error(f"❌ Erro ao guardar: {e}")
         
         with col_save2:
-            csv_data = edited_df.to_csv(sep=';', index=False).encode('utf-8-sig')
+            # Export only CAD fields, not internal state
+            export_cols = [c for c in edited_df.columns if c not in ['id', 'estado_interno', 'comentario', 'data_limite', 'responsavel']]
+            csv_data = edited_df[export_cols].to_csv(sep=';', index=False).encode('utf-8-sig')
             st.download_button(
                 label="💾 Download CSV editado",
                 data=csv_data,
@@ -782,62 +1137,12 @@ else:
     with stat_col4:
         latest_rev = filtered_df['r'].mode()[0] if not filtered_df['r'].empty else "-"
         st.metric("Revisão Mais Comum", latest_rev)
-    
-    # Detailed view expander
-    with st.expander("🔍 Ver detalhes e histórico de revisões"):
-        if not filtered_df.empty:
-            selected_layout = st.selectbox(
-                "Selecione layout:",
-                filtered_df['layout_name'].tolist()
-            )
-            
-            desenho_detail = filtered_df[filtered_df['layout_name'] == selected_layout].iloc[0]
-            
-            col_a, col_b = st.columns(2)
-            
-            with col_a:
-                st.markdown("**📋 Informação Geral:**")
-                st.text(f"Layout: {desenho_detail.get('layout_name', '-')}")
-                st.text(f"DWG: {desenho_detail.get('dwg_name', '-')}")
-                st.text(f"DES_NUM: {desenho_detail.get('des_num', '-')}")
-                st.text(f"Data 1ª Emissão: {desenho_detail.get('data', '-')}")
-                st.text(f"Cliente: {desenho_detail.get('cliente', '-')}")
-                st.text(f"Obra: {desenho_detail.get('obra', '-')}")
-            
-            with col_b:
-                st.markdown("**📐 Conteúdo:**")
-                st.text(f"TIPO: {desenho_detail.get('tipo_display', '-')}")
-                st.text(f"ELEMENTO: {desenho_detail.get('elemento_key', '-')}")
-                st.text(f"TITULO: {desenho_detail.get('elemento_titulo', '-')}")
-                st.text(f"Especialidade: {desenho_detail.get('especialidade', '-')}")
-                st.text(f"Fase: {desenho_detail.get('fase', '-')}")
-                st.text(f"Projetou: {desenho_detail.get('projetou', '-')}")
-            
-            # Histórico de Revisões
-            st.markdown("---")
-            st.markdown(f"**📜 Histórico de Revisões** (Atual: **{desenho_detail.get('r', '-')}**)")
-            
-            # Obter revisões da DB
-            desenho_id = desenho_detail.get('id')
-            if desenho_id:
-                conn = get_connection()
-                revisoes = get_revisoes_by_desenho_id(conn, desenho_id)
-                conn.close()
-                
-                if revisoes:
-                    rev_df = pd.DataFrame(revisoes)
-                    rev_df.columns = ['Revisão', 'Data', 'Descrição']
-                    st.dataframe(rev_df, use_container_width=True, hide_index=True)
-                else:
-                    st.info("ℹ️ Sem histórico de revisões registado. Importe um CSV com todos os campos para registar revisões.")
-            else:
-                st.warning("⚠️ ID do desenho não encontrado")
 
 # Footer
 st.markdown("---")
 st.markdown(
     "<div style='text-align: center; color: gray;'>"
-    "JSJ Engenharia - Sistema de Gestão de Desenhos | v1.0"
+    "JSJ Engenharia - Sistema de Gestão de Desenhos | v2.0 - Estado Interno"
     "</div>",
     unsafe_allow_html=True
 )

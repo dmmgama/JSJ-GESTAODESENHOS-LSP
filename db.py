@@ -19,7 +19,7 @@ def get_connection():
 
 def criar_tabelas(conn):
     """
-    Create desenhos and revisoes tables if they don't exist.
+    Create desenhos, revisoes, and historico_comentarios tables if they don't exist.
     """
     cursor = conn.cursor()
     
@@ -48,6 +48,10 @@ def criar_tabelas(conn):
             r_desc TEXT,
             data TEXT,
             raw_attributes TEXT,
+            estado_interno TEXT DEFAULT 'projeto',
+            comentario TEXT,
+            data_limite TEXT,
+            responsavel TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(layout_name, dwg_name)
@@ -71,6 +75,23 @@ def criar_tabelas(conn):
         cursor.execute("ALTER TABLE desenhos ADD COLUMN r_desc TEXT")
     except:
         pass
+    # New internal state fields (migration)
+    try:
+        cursor.execute("ALTER TABLE desenhos ADD COLUMN estado_interno TEXT DEFAULT 'projeto'")
+    except:
+        pass
+    try:
+        cursor.execute("ALTER TABLE desenhos ADD COLUMN comentario TEXT")
+    except:
+        pass
+    try:
+        cursor.execute("ALTER TABLE desenhos ADD COLUMN data_limite TEXT")
+    except:
+        pass
+    try:
+        cursor.execute("ALTER TABLE desenhos ADD COLUMN responsavel TEXT")
+    except:
+        pass
     
     # Table: revisoes
     cursor.execute("""
@@ -84,6 +105,22 @@ def criar_tabelas(conn):
         )
     """)
     
+    # Table: historico_comentarios (para histórico de comentários internos)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS historico_comentarios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            desenho_id INTEGER NOT NULL,
+            comentario TEXT,
+            estado_anterior TEXT,
+            estado_novo TEXT,
+            data_limite TEXT,
+            responsavel TEXT,
+            autor TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (desenho_id) REFERENCES desenhos(id) ON DELETE CASCADE
+        )
+    """)
+    
     # Index on layout_name for faster lookups
     cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_layout_name ON desenhos(layout_name)
@@ -92,6 +129,11 @@ def criar_tabelas(conn):
     # Index on tipo_key and elemento_key for LPP generation
     cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_tipo_elemento ON desenhos(tipo_key, elemento_key)
+    """)
+    
+    # Index on estado_interno for filtering
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_estado_interno ON desenhos(estado_interno)
     """)
     
     conn.commit()
@@ -609,3 +651,334 @@ def get_all_desenhos_with_revisoes(conn, dwg_name: str = None) -> List[Dict[str,
             result.append(desenho)
     
     return result
+
+
+# ============================================
+# FUNÇÕES PARA ESTADO INTERNO E COMENTÁRIOS
+# ============================================
+
+ESTADOS_VALIDOS = ['projeto', 'needs_revision', 'built']
+
+
+def update_estado_interno(conn, desenho_id: int, novo_estado: str, autor: str = None) -> bool:
+    """
+    Update the internal state of a desenho and log to history.
+    
+    Args:
+        conn: Database connection
+        desenho_id: ID of the desenho
+        novo_estado: New state (projeto, needs_revision, built)
+        autor: Optional author of the change
+        
+    Returns:
+        True if updated successfully
+    """
+    if novo_estado not in ESTADOS_VALIDOS:
+        return False
+    
+    cursor = conn.cursor()
+    
+    # Get current state
+    cursor.execute("SELECT estado_interno, comentario, data_limite, responsavel FROM desenhos WHERE id = ?", (desenho_id,))
+    row = cursor.fetchone()
+    
+    if not row:
+        return False
+    
+    estado_anterior = row[0] or 'projeto'
+    
+    # Only log if state changed
+    if estado_anterior != novo_estado:
+        # Log to history
+        cursor.execute("""
+            INSERT INTO historico_comentarios 
+            (desenho_id, comentario, estado_anterior, estado_novo, data_limite, responsavel, autor)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            desenho_id,
+            row[1],  # current comment
+            estado_anterior,
+            novo_estado,
+            row[2],  # data_limite
+            row[3],  # responsavel
+            autor
+        ))
+    
+    # Update state
+    cursor.execute("""
+        UPDATE desenhos SET estado_interno = ?, updated_at = ? WHERE id = ?
+    """, (novo_estado, datetime.now().isoformat(), desenho_id))
+    
+    conn.commit()
+    return True
+
+
+def update_comentario_interno(
+    conn, 
+    desenho_id: int, 
+    comentario: str, 
+    data_limite: str = None, 
+    responsavel: str = None,
+    autor: str = None
+) -> bool:
+    """
+    Update internal comment, deadline and responsible for a desenho.
+    Logs the previous state to history.
+    
+    Args:
+        conn: Database connection
+        desenho_id: ID of the desenho
+        comentario: New comment text
+        data_limite: Optional deadline date (YYYY-MM-DD)
+        responsavel: Optional responsible person
+        autor: Optional author of the change
+        
+    Returns:
+        True if updated successfully
+    """
+    cursor = conn.cursor()
+    
+    # Get current values
+    cursor.execute("""
+        SELECT estado_interno, comentario, data_limite, responsavel 
+        FROM desenhos WHERE id = ?
+    """, (desenho_id,))
+    row = cursor.fetchone()
+    
+    if not row:
+        return False
+    
+    # Log to history if comment changed
+    old_comentario = row[1] or ''
+    if old_comentario != comentario:
+        cursor.execute("""
+            INSERT INTO historico_comentarios 
+            (desenho_id, comentario, estado_anterior, estado_novo, data_limite, responsavel, autor)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            desenho_id,
+            old_comentario,
+            row[0],  # estado_interno stays same
+            row[0],
+            row[2],  # old data_limite
+            row[3],  # old responsavel
+            autor
+        ))
+    
+    # Update fields
+    cursor.execute("""
+        UPDATE desenhos SET 
+            comentario = ?, 
+            data_limite = ?, 
+            responsavel = ?,
+            updated_at = ? 
+        WHERE id = ?
+    """, (comentario, data_limite, responsavel, datetime.now().isoformat(), desenho_id))
+    
+    conn.commit()
+    return True
+
+
+def update_estado_e_comentario(
+    conn,
+    desenho_id: int,
+    estado: str = None,
+    comentario: str = None,
+    data_limite: str = None,
+    responsavel: str = None,
+    autor: str = None
+) -> bool:
+    """
+    Update state and/or comment in one operation.
+    
+    Args:
+        conn: Database connection
+        desenho_id: ID of the desenho
+        estado: New state (optional)
+        comentario: New comment (optional)
+        data_limite: Deadline date (optional)
+        responsavel: Responsible person (optional)
+        autor: Author of change (optional)
+        
+    Returns:
+        True if updated successfully
+    """
+    if estado and estado not in ESTADOS_VALIDOS:
+        return False
+    
+    cursor = conn.cursor()
+    
+    # Get current values
+    cursor.execute("""
+        SELECT estado_interno, comentario, data_limite, responsavel 
+        FROM desenhos WHERE id = ?
+    """, (desenho_id,))
+    row = cursor.fetchone()
+    
+    if not row:
+        return False
+    
+    estado_anterior = row[0] or 'projeto'
+    novo_estado = estado if estado else estado_anterior
+    comentario_anterior = row[1] or ''
+    novo_comentario = comentario if comentario is not None else comentario_anterior
+    data_limite_anterior = row[2]
+    nova_data_limite = data_limite if data_limite is not None else data_limite_anterior
+    responsavel_anterior = row[3]
+    novo_responsavel = responsavel if responsavel is not None else responsavel_anterior
+    
+    # Log to history if anything important changed
+    if estado_anterior != novo_estado or comentario_anterior != novo_comentario:
+        cursor.execute("""
+            INSERT INTO historico_comentarios 
+            (desenho_id, comentario, estado_anterior, estado_novo, data_limite, responsavel, autor)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            desenho_id,
+            comentario_anterior,
+            estado_anterior,
+            novo_estado,
+            data_limite_anterior,
+            responsavel_anterior,
+            autor
+        ))
+    
+    # Update all fields
+    cursor.execute("""
+        UPDATE desenhos SET 
+            estado_interno = ?,
+            comentario = ?, 
+            data_limite = ?, 
+            responsavel = ?,
+            updated_at = ? 
+        WHERE id = ?
+    """, (novo_estado, novo_comentario, nova_data_limite, novo_responsavel, 
+          datetime.now().isoformat(), desenho_id))
+    
+    conn.commit()
+    return True
+
+
+def get_historico_comentarios(conn, desenho_id: int) -> List[Dict[str, Any]]:
+    """
+    Get comment history for a desenho.
+    
+    Args:
+        conn: Database connection
+        desenho_id: ID of the desenho
+        
+    Returns:
+        List of history entries, newest first
+    """
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, comentario, estado_anterior, estado_novo, data_limite, 
+               responsavel, autor, created_at
+        FROM historico_comentarios 
+        WHERE desenho_id = ?
+        ORDER BY created_at DESC
+    """, (desenho_id,))
+    
+    rows = cursor.fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_desenhos_by_estado(conn, estado: str) -> List[Dict[str, Any]]:
+    """
+    Get all desenhos with a specific internal state.
+    
+    Args:
+        conn: Database connection
+        estado: State to filter by (projeto, needs_revision, built)
+        
+    Returns:
+        List of desenho dictionaries
+    """
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT * FROM desenhos 
+        WHERE estado_interno = ? OR (estado_interno IS NULL AND ? = 'projeto')
+        ORDER BY tipo_key, elemento_key, des_num
+    """, (estado, estado))
+    
+    rows = cursor.fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_desenhos_em_atraso(conn) -> List[Dict[str, Any]]:
+    """
+    Get all desenhos with needs_revision state and past deadline.
+    
+    Returns:
+        List of desenho dictionaries that are overdue
+    """
+    cursor = conn.cursor()
+    today = datetime.now().strftime('%Y-%m-%d')
+    
+    cursor.execute("""
+        SELECT * FROM desenhos 
+        WHERE estado_interno = 'needs_revision' 
+        AND data_limite IS NOT NULL 
+        AND data_limite != ''
+        AND data_limite < ?
+        ORDER BY data_limite, tipo_key, elemento_key
+    """, (today,))
+    
+    rows = cursor.fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_desenho_by_id(conn, desenho_id: int) -> Dict[str, Any]:
+    """
+    Get a single desenho by ID.
+    
+    Args:
+        conn: Database connection
+        desenho_id: ID of the desenho
+        
+    Returns:
+        Desenho dictionary or None
+    """
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM desenhos WHERE id = ?", (desenho_id,))
+    row = cursor.fetchone()
+    return dict(row) if row else None
+
+
+def get_stats_by_estado(conn) -> Dict[str, int]:
+    """
+    Get count of desenhos by each state.
+    
+    Returns:
+        Dict with counts: {projeto: N, needs_revision: N, built: N, em_atraso: N}
+    """
+    cursor = conn.cursor()
+    today = datetime.now().strftime('%Y-%m-%d')
+    
+    stats = {}
+    
+    # Count by estado
+    cursor.execute("""
+        SELECT COALESCE(estado_interno, 'projeto') as estado, COUNT(*) as count
+        FROM desenhos
+        GROUP BY COALESCE(estado_interno, 'projeto')
+    """)
+    for row in cursor.fetchall():
+        stats[row[0]] = row[1]
+    
+    # Ensure all states have a value
+    for estado in ESTADOS_VALIDOS:
+        if estado not in stats:
+            stats[estado] = 0
+    
+    # Count overdue
+    cursor.execute("""
+        SELECT COUNT(*) FROM desenhos 
+        WHERE estado_interno = 'needs_revision' 
+        AND data_limite IS NOT NULL 
+        AND data_limite != ''
+        AND data_limite < ?
+    """, (today,))
+    stats['em_atraso'] = cursor.fetchone()[0]
+    
+    return stats

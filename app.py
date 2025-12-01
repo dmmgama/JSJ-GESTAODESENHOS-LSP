@@ -13,7 +13,8 @@ from db import (
     get_db_stats, get_all_desenhos_with_revisoes, get_unique_tipos, get_unique_elementos, 
     get_all_layout_names, update_estado_interno, update_estado_e_comentario,
     get_historico_comentarios, get_desenhos_by_estado, get_desenhos_em_atraso,
-    get_desenho_by_id, get_stats_by_estado, ESTADOS_VALIDOS
+    get_desenho_by_id, get_stats_by_estado, ESTADOS_VALIDOS,
+    get_unique_revision_dates, get_desenhos_at_date
 )
 from json_importer import import_all_json
 from csv_importer import import_all_csv, import_single_csv
@@ -269,6 +270,20 @@ st.sidebar.info(
 
 # Main area
 st.title("📐 JSJ - Gestão de Desenhos LPP")
+
+# Vista selector (Lista Atual vs Histórico)
+col_vista1, col_vista2, col_vista3 = st.columns([1, 1, 3])
+with col_vista1:
+    if st.button("📋 Lista Atual", use_container_width=True, 
+                 type="primary" if st.session_state.get('vista_mode', 'atual') == 'atual' else "secondary"):
+        st.session_state.vista_mode = 'atual'
+        st.rerun()
+with col_vista2:
+    if st.button("📜 Ver Histórico", use_container_width=True,
+                 type="primary" if st.session_state.get('vista_mode', 'atual') == 'historico' else "secondary"):
+        st.session_state.vista_mode = 'historico'
+        st.rerun()
+
 st.markdown("---")
 
 # Load data (fresh connection each time)
@@ -295,7 +310,104 @@ def load_data():
 
 df = load_data()
 
-if df.empty:
+# Initialize vista mode
+if 'vista_mode' not in st.session_state:
+    st.session_state.vista_mode = 'atual'
+
+# ========================================
+# VISTA: HISTÓRICO
+# ========================================
+if st.session_state.vista_mode == 'historico':
+    st.subheader("📜 Histórico de Revisões por Data")
+    st.markdown("Selecione uma data para ver o estado dos desenhos nessa data.")
+    
+    # Get unique dates
+    conn = get_connection()
+    datas_unicas = get_unique_revision_dates(conn)
+    conn.close()
+    
+    if not datas_unicas:
+        st.warning("⚠️ Nenhuma data de revisão encontrada na base de dados.")
+    else:
+        # Date selector
+        col_date_select, col_date_info = st.columns([2, 3])
+        
+        with col_date_select:
+            data_selecionada = st.selectbox(
+                "📅 Selecione uma data:",
+                datas_unicas,
+                key="historico_data_select"
+            )
+        
+        with col_date_info:
+            st.info(f"💡 {len(datas_unicas)} datas com revisões registadas")
+        
+        if data_selecionada:
+            st.markdown("---")
+            st.markdown(f"### 📊 Estado dos desenhos em **{data_selecionada}**")
+            
+            # Get desenhos at that date
+            conn = get_connection()
+            desenhos_na_data = get_desenhos_at_date(conn, data_selecionada)
+            conn.close()
+            
+            if not desenhos_na_data:
+                st.warning(f"⚠️ Nenhum desenho encontrado para a data {data_selecionada}")
+            else:
+                # Convert to DataFrame
+                df_historico = pd.DataFrame(desenhos_na_data)
+                
+                # Stats
+                col_h1, col_h2, col_h3 = st.columns(3)
+                with col_h1:
+                    st.metric("Total Desenhos", len(df_historico))
+                with col_h2:
+                    tipos_unicos = df_historico['tipo_display'].nunique() if 'tipo_display' in df_historico.columns else 0
+                    st.metric("Tipos Únicos", tipos_unicos)
+                with col_h3:
+                    revisoes = df_historico['r'].value_counts().to_dict() if 'r' in df_historico.columns else {}
+                    rev_info = ", ".join([f"{k}:{v}" for k, v in revisoes.items() if k and k != '-'])
+                    st.metric("Revisões", rev_info if rev_info else "-")
+                
+                st.markdown("---")
+                
+                # Display columns for history
+                hist_columns = {
+                    'des_num': 'Nº Desenho',
+                    'layout_name': 'Layout',
+                    'tipo_display': 'Tipo',
+                    'elemento': 'Elemento',
+                    'titulo': 'Título',
+                    'r': 'Revisão',
+                    'r_data': 'Data Revisão',
+                    'r_desc': 'Descrição Revisão',
+                    'dwg_name': 'DWG'
+                }
+                
+                # Filter to available columns
+                display_cols = [c for c in hist_columns.keys() if c in df_historico.columns]
+                display_df = df_historico[display_cols].copy()
+                display_df.columns = [hist_columns.get(c, c) for c in display_cols]
+                
+                st.dataframe(
+                    display_df,
+                    use_container_width=True,
+                    height=400
+                )
+                
+                # Export button for history
+                csv_hist = display_df.to_csv(sep=';', index=False).encode('utf-8-sig')
+                st.download_button(
+                    label=f"📥 Download CSV (estado em {data_selecionada})",
+                    data=csv_hist,
+                    file_name=f"desenhos_historico_{data_selecionada.replace('-', '_')}.csv",
+                    mime="text/csv"
+                )
+
+# ========================================
+# VISTA: LISTA ATUAL
+# ========================================
+elif df.empty:
     st.warning("⚠️ Nenhum desenho na base de dados. Importe JSON ou CSV primeiro.")
 else:
     # Get estado stats for display

@@ -188,6 +188,26 @@
     (vl-filename-base rawName))
 )
 
+;; Extrai apenas a parte numerica de uma string (ignora prefixos/sufixos)
+;; Ex: "A-001" -> "001", "FUN-12" -> "12", "001" -> "001"
+(defun ExtractNumericPart (str / i ch result)
+  (if (or (null str) (= str ""))
+    ""
+    (progn
+      (setq result "")
+      (setq i 1)
+      (while (<= i (strlen str))
+        (setq ch (substr str i 1))
+        (if (and (>= (ascii ch) 48) (<= (ascii ch) 57))  ;; 0-9
+          (setq result (strcat result ch))
+        )
+        (setq i (1+ i))
+      )
+      result
+    )
+  )
+)
+
 (defun CleanCSV (str) 
   (if (= str nil) (setq str "")) 
   (setq str (vl-string-translate ";" "," str)) 
@@ -1612,15 +1632,17 @@
     (princ "\n   3. Numerar Desenhos")
     (princ "\n   5. Definir Formato TAB")
     (princ "\n   6. Aplicar Formato TAB")
+    (princ "\n   7. Apagar Desenhos")
     (princ "\n   0. Voltar")
-    (initget "1 2 3 5 6 0")
-    (setq optSub (getkword "\n   Opcao [1/2/3/5/6/0]: "))
+    (initget "1 2 3 5 6 7 0")
+    (setq optSub (getkword "\n   Opcao [1/2/3/5/6/7/0]: "))
     (cond
       ((= optSub "1") (Run_GenerateLayouts_FromTemplate_V26))
       ((= optSub "2") (Run_SortLayouts_Engine))
       ((= optSub "3") (NumerarDesenhos))
       ((= optSub "5") (DefinirFormatoTab))
       ((= optSub "6") (AplicarFormatoTab))
+      ((= optSub "7") (ApagarDesenhos))
       ((= optSub "0") (setq loopSub nil))
       ((= optSub nil) (setq loopSub nil))
     )
@@ -1725,6 +1747,131 @@
           (alert (strcat "Concluido!\n\n" (itoa count) " tabs renomeados."))
         )
         (princ "\nCancelado.")
+      )
+    )
+  )
+  (princ)
+)
+
+;; ============================================================================
+;; APAGAR DESENHOS (Nova funcionalidade)
+;; ============================================================================
+;; Permite apagar todos os layouts ou uma selecao especifica
+;; A selecao funciona pelo numero do desenho (parte numerica do DES_NUM)
+(defun ApagarDesenhos ( / doc drawList optMode targets selectedList confirmMsg count layToDelete)
+  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
+  (setq drawList (GetDrawingList))
+  
+  (if (or (null drawList) (= (length drawList) 0))
+    (progn
+      (alert "Nenhum desenho encontrado!")
+      (princ "\nNenhum desenho para apagar.")
+    )
+    (progn
+      (princ "\n\n=== APAGAR DESENHOS ===")
+      (princ (strcat "\nTotal de desenhos: " (itoa (length drawList))))
+      
+      ;; Listar desenhos com numeracao
+      (princ "\n\n--- DESENHOS DISPONIVEIS ---")
+      (setq i 1)
+      (foreach item drawList
+        (princ (strcat "\n " (itoa i) ". DES_NUM=" (cadr item) " | Layout=" (caddr item)))
+        (setq i (1+ i))
+      )
+      
+      ;; Escolher modo
+      (princ "\n\n-----------------------------------------")
+      (princ "\n[T] Apagar TODOS")
+      (princ "\n[S] Apagar SELECAO (ex: 1,3,5 ou 2-5)")
+      (princ "\n[0] Cancelar")
+      (initget "T S 0")
+      (setq optMode (getkword "\n\nOpcao [T/S/0]: "))
+      
+      (cond
+        ;; TODOS
+        ((= optMode "T")
+          (setq selectedList drawList)
+          (setq confirmMsg (strcat "ATENCAO!\n\nVai apagar TODOS os " (itoa (length drawList)) " desenhos!\n\nTem a certeza?"))
+        )
+        
+        ;; SELECAO
+        ((= optMode "S")
+          (princ "\n\n--> Indique os numeros dos desenhos a apagar:")
+          (princ "\n    (Use a numeracao da lista, nao o DES_NUM)")
+          (princ "\n    Exemplos: 1,3,5 ou 2-5 ou 1,3-5,8")
+          (setq targets (getstring T "\n\nSelecao: "))
+          
+          (if (and targets (/= targets ""))
+            (progn
+              (setq selectedList (ParseSelectionToList drawList targets))
+              (if (and selectedList (> (length selectedList) 0))
+                (setq confirmMsg (strcat "Vai apagar " (itoa (length selectedList)) " desenho(s):\n\n"
+                                         (apply 'strcat 
+                                                (mapcar '(lambda (x) (strcat "- DES_NUM=" (cadr x) " (" (caddr x) ")\n")) 
+                                                        selectedList))
+                                         "\nTem a certeza?"))
+                (progn
+                  (princ "\nSelecao invalida ou vazia.")
+                  (setq selectedList nil)
+                )
+              )
+            )
+            (progn
+              (princ "\nCancelado - nenhuma selecao.")
+              (setq selectedList nil)
+            )
+          )
+        )
+        
+        ;; CANCELAR
+        (T
+          (princ "\nOperacao cancelada.")
+          (setq selectedList nil)
+        )
+      )
+      
+      ;; Executar apagamento se ha selecao
+      (if (and selectedList (> (length selectedList) 0))
+        (progn
+          (initget "Sim Nao")
+          (if (= (getkword (strcat "\n" confirmMsg " [Sim/Nao] <Nao>: ")) "Sim")
+            (progn
+              (princ "\nA apagar layouts...")
+              (setq count 0)
+              
+              (foreach item selectedList
+                ;; item = (handle desNum layoutName tipo)
+                (setq layToDelete nil)
+                
+                ;; Encontrar o layout pelo nome
+                (vlax-for lay (vla-get-Layouts doc)
+                  (if (and (not layToDelete)
+                           (= (strcase (vla-get-Name lay)) (strcase (caddr item))))
+                    (setq layToDelete lay)
+                  )
+                )
+                
+                ;; Apagar o layout
+                (if layToDelete
+                  (if (not (vl-catch-all-error-p 
+                             (vl-catch-all-apply 'vla-Delete (list layToDelete))))
+                    (progn
+                      (setq count (1+ count))
+                      (princ (strcat "\n  Apagado: " (caddr item) " (DES_NUM=" (cadr item) ")"))
+                      (WriteLog (strcat "APAGAR: Layout '" (caddr item) "' DES_NUM=" (cadr item) " eliminado"))
+                    )
+                    (princ (strcat "\n  ERRO ao apagar: " (caddr item)))
+                  )
+                  (princ (strcat "\n  Layout nao encontrado: " (caddr item)))
+                )
+              )
+              
+              (vla-Regen doc acActiveViewport)
+              (alert (strcat "Concluido!\n\n" (itoa count) " layout(s) apagado(s)."))
+            )
+            (princ "\nOperacao cancelada pelo utilizador.")
+          )
+        )
       )
     )
   )

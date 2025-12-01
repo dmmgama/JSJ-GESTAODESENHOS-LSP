@@ -982,3 +982,128 @@ def get_stats_by_estado(conn) -> Dict[str, int]:
     stats['em_atraso'] = cursor.fetchone()[0]
     
     return stats
+
+
+def get_unique_revision_dates(conn) -> List[str]:
+    """
+    Get all unique revision dates from revisoes table.
+    Returns dates sorted descending (most recent first).
+    
+    Returns:
+        List of date strings in format DD-MM-YYYY
+    """
+    cursor = conn.cursor()
+    
+    # Get all unique dates from revisoes table
+    cursor.execute("""
+        SELECT DISTINCT rev_date 
+        FROM revisoes 
+        WHERE rev_date IS NOT NULL 
+        AND rev_date != '' 
+        AND rev_date != '-'
+        ORDER BY 
+            SUBSTR(rev_date, 7, 4) DESC,
+            SUBSTR(rev_date, 4, 2) DESC,
+            SUBSTR(rev_date, 1, 2) DESC
+    """)
+    
+    return [row[0] for row in cursor.fetchall()]
+
+
+def get_desenhos_at_date(conn, target_date: str) -> List[Dict[str, Any]]:
+    """
+    Get all desenhos with their latest revision as of a specific date.
+    For each desenho, shows the revision that was current on that date.
+    
+    Args:
+        conn: Database connection
+        target_date: Date string in format DD-MM-YYYY
+        
+    Returns:
+        List of desenhos with revision info at that date
+    """
+    cursor = conn.cursor()
+    
+    # Parse target date to comparable format (YYYY-MM-DD for SQLite comparison)
+    try:
+        parts = target_date.split('-')
+        if len(parts) == 3:
+            target_date_iso = f"{parts[2]}-{parts[1]}-{parts[0]}"
+        else:
+            target_date_iso = target_date
+    except:
+        target_date_iso = target_date
+    
+    # Get all desenhos
+    cursor.execute("""
+        SELECT d.id, d.layout_name, d.dwg_name, d.des_num, d.tipo_display, 
+               d.elemento, d.elemento_key, d.titulo, d.elemento_titulo,
+               d.cliente, d.obra, d.data
+        FROM desenhos d
+        ORDER BY d.layout_name
+    """)
+    
+    desenhos = []
+    
+    for row in cursor.fetchall():
+        desenho = {
+            'id': row[0],
+            'layout_name': row[1],
+            'dwg_name': row[2],
+            'des_num': row[3],
+            'tipo_display': row[4],
+            'elemento': row[5],
+            'elemento_key': row[6],
+            'titulo': row[7],
+            'elemento_titulo': row[8],
+            'cliente': row[9],
+            'obra': row[10],
+            'data': row[11],
+            'r': '-',
+            'r_data': '-',
+            'r_desc': '-'
+        }
+        
+        # Get the latest revision on or before the target date
+        cursor.execute("""
+            SELECT rev_code, rev_date, rev_desc
+            FROM revisoes
+            WHERE desenho_id = ?
+            AND rev_date IS NOT NULL
+            AND rev_date != ''
+            AND rev_date != '-'
+            AND (
+                SUBSTR(rev_date, 7, 4) || '-' || SUBSTR(rev_date, 4, 2) || '-' || SUBSTR(rev_date, 1, 2)
+            ) <= ?
+            ORDER BY 
+                SUBSTR(rev_date, 7, 4) DESC,
+                SUBSTR(rev_date, 4, 2) DESC,
+                SUBSTR(rev_date, 1, 2) DESC,
+                rev_code DESC
+            LIMIT 1
+        """, (row[0], target_date_iso))
+        
+        rev_row = cursor.fetchone()
+        if rev_row:
+            desenho['r'] = rev_row[0]
+            desenho['r_data'] = rev_row[1]
+            desenho['r_desc'] = rev_row[2]
+        
+        # Only include desenhos that had revisions on or before this date
+        # Check if desenho existed by looking at any revision <= target date
+        # or if the first emission date <= target date
+        first_emission_date = desenho.get('data', '')
+        has_first_emission = False
+        if first_emission_date and first_emission_date not in ['', '-']:
+            try:
+                ep = first_emission_date.split('-')
+                if len(ep) == 3:
+                    first_iso = f"{ep[2]}-{ep[1]}-{ep[0]}"
+                    has_first_emission = first_iso <= target_date_iso
+            except:
+                pass
+        
+        if rev_row or has_first_emission:
+            desenhos.append(desenho)
+    
+    return desenhos

@@ -620,18 +620,18 @@ def get_desenho_with_revisoes(conn, desenho_id: int) -> Dict[str, Any]:
             desenho[f'data_{letter}'] = rev.get('rev_date', '')
             desenho[f'desc_{letter}'] = rev.get('rev_desc', '')
     
-    # Extract id_cad from raw_attributes if available
-    raw = desenho.get('raw_attributes', '')
-    if raw:
-        try:
-            # raw_attributes is stored as str(dict), try to parse it
-            import ast
-            parsed = ast.literal_eval(raw)
-            desenho['id_cad'] = parsed.get('id_cad', '')
-        except:
+    # Ensure id_cad is set (use from DB directly, fallback to raw_attributes)
+    if not desenho.get('id_cad'):
+        raw = desenho.get('raw_attributes', '')
+        if raw:
+            try:
+                import ast
+                parsed = ast.literal_eval(raw)
+                desenho['id_cad'] = parsed.get('id_cad', '')
+            except:
+                desenho['id_cad'] = ''
+        else:
             desenho['id_cad'] = ''
-    else:
-        desenho['id_cad'] = ''
     
     return desenho
 

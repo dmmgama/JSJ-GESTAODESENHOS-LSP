@@ -93,6 +93,8 @@ CSV_HEADER_MAP = {
 
 def normalize_header(header: str) -> str:
     """Normalize header name to internal field name."""
+    if header is None or header == '':
+        return '_empty_'
     header_upper = header.strip().upper()
     return CSV_HEADER_MAP.get(header_upper, header_upper.lower())
 
@@ -110,7 +112,11 @@ def parse_csv_row(row: Dict[str, str], headers_map: Dict[str, str]) -> Dict[str,
     """
     parsed = {}
     for original_header, value in row.items():
+        if original_header is None:
+            continue
         normalized = headers_map.get(original_header, original_header.lower())
+        if normalized == '_empty_':
+            continue
         parsed[normalized] = value.strip() if value else ''
     return parsed
 

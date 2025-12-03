@@ -434,59 +434,58 @@ else:
     
     st.markdown("---")
     
-    # Filters
-    st.subheader("🔍 Filtros")
-    
-    # Estado filter row (quick buttons)
-    st.markdown("**Estado Interno:**")
-    estado_col1, estado_col2, estado_col3, estado_col4, estado_col5 = st.columns(5)
-    
-    if 'estado_filter' not in st.session_state:
-        st.session_state.estado_filter = 'Todos'
-    
-    with estado_col1:
-        if st.button("🔄 Todos", use_container_width=True, 
-                     type="primary" if st.session_state.estado_filter == 'Todos' else "secondary"):
+    # Filters in expander
+    with st.expander("🔍 Filtros", expanded=True):
+        # Estado filter row (quick buttons)
+        st.markdown("**Estado Interno:**")
+        estado_col1, estado_col2, estado_col3, estado_col4, estado_col5 = st.columns(5)
+        
+        if 'estado_filter' not in st.session_state:
             st.session_state.estado_filter = 'Todos'
-            st.rerun()
-    with estado_col2:
-        if st.button("📋 Projeto", use_container_width=True,
-                     type="primary" if st.session_state.estado_filter == 'projeto' else "secondary"):
-            st.session_state.estado_filter = 'projeto'
-            st.rerun()
-    with estado_col3:
-        if st.button("⚠️ Precisa Revisão", use_container_width=True,
-                     type="primary" if st.session_state.estado_filter == 'needs_revision' else "secondary"):
-            st.session_state.estado_filter = 'needs_revision'
-            st.rerun()
-    with estado_col4:
-        if st.button("✅ Construído", use_container_width=True,
-                     type="primary" if st.session_state.estado_filter == 'built' else "secondary"):
-            st.session_state.estado_filter = 'built'
-            st.rerun()
-    with estado_col5:
-        if st.button("🚨 Em Atraso", use_container_width=True,
-                     type="primary" if st.session_state.estado_filter == 'em_atraso' else "secondary"):
-            st.session_state.estado_filter = 'em_atraso'
-            st.rerun()
-    
-    # Other filters
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        tipo_options = ["Todos"] + sorted(df['tipo_display'].dropna().unique().tolist())
-        tipo_filter = st.selectbox("TIPO", tipo_options)
-    
-    with col2:
-        elemento_options = ["Todos"] + sorted(df['elemento_key'].dropna().unique().tolist())
-        elemento_filter = st.selectbox("ELEMENTO", elemento_options)
-    
-    with col3:
-        r_options = ["Todos"] + sorted(df['r'].dropna().unique().tolist())
-        r_filter = st.selectbox("Revisão (R)", r_options)
-    
-    with col4:
-        search_text = st.text_input("🔎 Procurar (DES_NUM ou LAYOUT)", "")
+        
+        with estado_col1:
+            if st.button("🔄 Todos", use_container_width=True, 
+                         type="primary" if st.session_state.estado_filter == 'Todos' else "secondary"):
+                st.session_state.estado_filter = 'Todos'
+                st.rerun()
+        with estado_col2:
+            if st.button("📋 Projeto", use_container_width=True,
+                         type="primary" if st.session_state.estado_filter == 'projeto' else "secondary"):
+                st.session_state.estado_filter = 'projeto'
+                st.rerun()
+        with estado_col3:
+            if st.button("⚠️ Precisa Revisão", use_container_width=True,
+                         type="primary" if st.session_state.estado_filter == 'needs_revision' else "secondary"):
+                st.session_state.estado_filter = 'needs_revision'
+                st.rerun()
+        with estado_col4:
+            if st.button("✅ Construído", use_container_width=True,
+                         type="primary" if st.session_state.estado_filter == 'built' else "secondary"):
+                st.session_state.estado_filter = 'built'
+                st.rerun()
+        with estado_col5:
+            if st.button("🚨 Em Atraso", use_container_width=True,
+                         type="primary" if st.session_state.estado_filter == 'em_atraso' else "secondary"):
+                st.session_state.estado_filter = 'em_atraso'
+                st.rerun()
+        
+        # Other filters
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            tipo_options = ["Todos"] + sorted(df['tipo_display'].dropna().unique().tolist())
+            tipo_filter = st.selectbox("TIPO", tipo_options)
+        
+        with col2:
+            elemento_options = ["Todos"] + sorted(df['elemento_key'].dropna().unique().tolist())
+            elemento_filter = st.selectbox("ELEMENTO", elemento_options)
+        
+        with col3:
+            r_options = ["Todos"] + sorted(df['r'].dropna().unique().tolist())
+            r_filter = st.selectbox("Revisão (R)", r_options)
+        
+        with col4:
+            search_text = st.text_input("🔎 Procurar (DES_NUM ou LAYOUT)", "")
     
     # Apply filters
     filtered_df = df.copy()
@@ -531,6 +530,7 @@ else:
     
     # All available columns with friendly names
     all_columns = {
+        'pfix': 'Prefixo',
         'des_num': 'Nº Desenho',
         'layout_name': 'Layout',
         'tipo_display': 'Tipo',
@@ -555,8 +555,8 @@ else:
         'dwg_name': 'Ficheiro DWG'
     }
     
-    # Default columns to show (now includes estado)
-    default_cols = ['estado_interno', 'des_num', 'layout_name', 'tipo_display', 'elemento', 'titulo', 'r', 'comentario', 'data_limite']
+    # Default columns to show (ordered: PFIX, Tipo, Nº Desenho, Elemento, Título, Revisão, Data Revisão, Estado)
+    default_cols = ['pfix', 'tipo_display', 'des_num', 'elemento', 'titulo', 'r', 'r_data', 'estado_interno']
     
     # Column selector
     if show_column_selector:
@@ -591,10 +591,10 @@ else:
     # ORDENAÇÃO (sempre visível, fora do modo edição)
     # ========================================
     st.markdown("---")
-    st.subheader("📊 Ordenação")
     
     # Colunas disponíveis para ordenação
     sort_columns_available = {
+        'pfix': 'Prefixo (PFIX)',
         'des_num': 'Nº Desenho',
         'tipo_display': 'Tipo',
         'elemento_key': 'Elemento',
@@ -623,84 +623,85 @@ else:
     if 'sort_values_order_2' not in st.session_state:
         st.session_state.sort_values_order_2 = []
     
-    # 1º Critério
-    col_crit1, col_vals1 = st.columns([1, 2])
-    
-    with col_crit1:
-        if has_prefixes:
-            sort1_options = {k: v for k, v in sort_columns_available.items() if k != 'des_num'}
-            st.caption("⚠️ DES_NUM tem prefixos")
-        else:
-            sort1_options = sort_columns_available
+    with st.expander("📊 Ordenação", expanded=False):
+        # 1º Critério
+        col_crit1, col_vals1 = st.columns([1, 2])
         
-        default_idx_1 = list(sort1_options.keys()).index(st.session_state.sort_criteria_1) if st.session_state.sort_criteria_1 in sort1_options else 0
+        with col_crit1:
+            if has_prefixes:
+                sort1_options = {k: v for k, v in sort_columns_available.items() if k != 'des_num'}
+                st.caption("⚠️ DES_NUM tem prefixos")
+            else:
+                sort1_options = sort_columns_available
+            
+            default_idx_1 = list(sort1_options.keys()).index(st.session_state.sort_criteria_1) if st.session_state.sort_criteria_1 in sort1_options else 0
+            
+            sort1_col = st.selectbox(
+                "1º Critério", 
+                list(sort1_options.keys()),
+                format_func=lambda x: sort1_options[x],
+                index=default_idx_1,
+                key="sort1_select"
+            )
+            st.session_state.sort_criteria_1 = sort1_col
         
-        sort1_col = st.selectbox(
-            "1º Critério", 
-            list(sort1_options.keys()),
-            format_func=lambda x: sort1_options[x],
-            index=default_idx_1,
-            key="sort1_select"
-        )
-        st.session_state.sort_criteria_1 = sort1_col
-    
-    with col_vals1:
-        if sort1_col in filtered_df.columns:
-            unique_vals_1 = sorted(filtered_df[sort1_col].dropna().unique().tolist())
-            if unique_vals_1:
-                if set(st.session_state.sort_values_order_1) != set(unique_vals_1):
-                    st.session_state.sort_values_order_1 = unique_vals_1
-                
-                st.caption("📋 Ordem (selecione na ordem desejada):")
-                new_order_1 = st.multiselect(
-                    "Valores 1º critério",
-                    options=unique_vals_1,
-                    default=st.session_state.sort_values_order_1,
-                    key="order_vals_1",
-                    label_visibility="collapsed"
-                )
-                if new_order_1:
-                    remaining = [v for v in unique_vals_1 if v not in new_order_1]
-                    st.session_state.sort_values_order_1 = new_order_1 + remaining
-    
-    # 2º Critério
-    col_crit2, col_vals2 = st.columns([1, 2])
-    
-    with col_crit2:
-        sort2_options = {"": "(nenhum)"} | {k: v for k, v in sort_columns_available.items() if k != sort1_col}
+        with col_vals1:
+            if sort1_col in filtered_df.columns:
+                unique_vals_1 = sorted(filtered_df[sort1_col].dropna().unique().tolist())
+                if unique_vals_1:
+                    if set(st.session_state.sort_values_order_1) != set(unique_vals_1):
+                        st.session_state.sort_values_order_1 = unique_vals_1
+                    
+                    st.caption("📋 Ordem (selecione na ordem desejada):")
+                    new_order_1 = st.multiselect(
+                        "Valores 1º critério",
+                        options=unique_vals_1,
+                        default=st.session_state.sort_values_order_1,
+                        key="order_vals_1",
+                        label_visibility="collapsed"
+                    )
+                    if new_order_1:
+                        remaining = [v for v in unique_vals_1 if v not in new_order_1]
+                        st.session_state.sort_values_order_1 = new_order_1 + remaining
         
-        if st.session_state.sort_criteria_2 in sort2_options:
-            default_idx_2 = list(sort2_options.keys()).index(st.session_state.sort_criteria_2)
-        else:
-            default_idx_2 = 0
+        # 2º Critério
+        col_crit2, col_vals2 = st.columns([1, 2])
         
-        sort2_col = st.selectbox(
-            "2º Critério",
-            list(sort2_options.keys()),
-            format_func=lambda x: sort2_options[x],
-            index=default_idx_2,
-            key="sort2_select"
-        )
-        st.session_state.sort_criteria_2 = sort2_col
-    
-    with col_vals2:
-        if sort2_col and sort2_col in filtered_df.columns:
-            unique_vals_2 = sorted(filtered_df[sort2_col].dropna().unique().tolist())
-            if unique_vals_2:
-                if set(st.session_state.sort_values_order_2) != set(unique_vals_2):
-                    st.session_state.sort_values_order_2 = unique_vals_2
-                
-                st.caption("📋 Ordem:")
-                new_order_2 = st.multiselect(
-                    "Valores 2º critério",
-                    options=unique_vals_2,
-                    default=st.session_state.sort_values_order_2,
-                    key="order_vals_2",
-                    label_visibility="collapsed"
-                )
-                if new_order_2:
-                    remaining = [v for v in unique_vals_2 if v not in new_order_2]
-                    st.session_state.sort_values_order_2 = new_order_2 + remaining
+        with col_crit2:
+            sort2_options = {"": "(nenhum)"} | {k: v for k, v in sort_columns_available.items() if k != sort1_col}
+            
+            if st.session_state.sort_criteria_2 in sort2_options:
+                default_idx_2 = list(sort2_options.keys()).index(st.session_state.sort_criteria_2)
+            else:
+                default_idx_2 = 0
+            
+            sort2_col = st.selectbox(
+                "2º Critério",
+                list(sort2_options.keys()),
+                format_func=lambda x: sort2_options[x],
+                index=default_idx_2,
+                key="sort2_select"
+            )
+            st.session_state.sort_criteria_2 = sort2_col
+        
+        with col_vals2:
+            if sort2_col and sort2_col in filtered_df.columns:
+                unique_vals_2 = sorted(filtered_df[sort2_col].dropna().unique().tolist())
+                if unique_vals_2:
+                    if set(st.session_state.sort_values_order_2) != set(unique_vals_2):
+                        st.session_state.sort_values_order_2 = unique_vals_2
+                    
+                    st.caption("📋 Ordem:")
+                    new_order_2 = st.multiselect(
+                        "Valores 2º critério",
+                        options=unique_vals_2,
+                        default=st.session_state.sort_values_order_2,
+                        key="order_vals_2",
+                        label_visibility="collapsed"
+                    )
+                    if new_order_2:
+                        remaining = [v for v in unique_vals_2 if v not in new_order_2]
+                        st.session_state.sort_values_order_2 = new_order_2 + remaining
     
     # Construir lista de ordenação
     sort_by = []
@@ -1059,12 +1060,30 @@ else:
                         update_fields = ['layout_name = ?', 'updated_at = ?']
                         update_values = [new_layout_name, datetime.now().isoformat()]
                         
-                        # Add CAD fields if present in edit columns
+                        # Add CAD fields if present in edit columns - ALL editable fields
                         field_mapping = {
-                            'cliente': 'cliente', 'obra': 'obra', 'localizacao': 'localizacao',
-                            'especialidade': 'especialidade', 'fase': 'fase', 'data': 'data',
-                            'projetou': 'projetou', 'des_num': 'des_num', 'tipo_display': 'tipo_display',
-                            'elemento_key': 'elemento_key', 'elemento_titulo': 'elemento_titulo', 'r': 'r'
+                            'pfix': 'pfix',
+                            'cliente': 'cliente', 
+                            'obra': 'obra', 
+                            'localizacao': 'localizacao',
+                            'especialidade': 'especialidade', 
+                            'fase': 'fase', 
+                            'data': 'data',
+                            'projetou': 'projetou', 
+                            'des_num': 'des_num', 
+                            'tipo_display': 'tipo_display',
+                            'elemento': 'elemento',
+                            'titulo': 'titulo',
+                            'elemento_key': 'elemento_key', 
+                            'elemento_titulo': 'elemento_titulo', 
+                            'r': 'r',
+                            'r_data': 'r_data',
+                            'r_desc': 'r_desc',
+                            'proj_num': 'proj_num',
+                            'proj_nome': 'proj_nome',
+                            'fase_pfix': 'fase_pfix',
+                            'emissao': 'emissao',
+                            'id_cad': 'id_cad',
                         }
                         
                         for col, db_field in field_mapping.items():
@@ -1141,7 +1160,7 @@ else:
     
     with col_exp_btn:
         if st.button("📤 Exportar CSV", use_container_width=True, type="primary"):
-            # Obter desenhos com todas as revisões do banco de dados
+            # Obter TODOS os desenhos do banco de dados (não apenas os filtrados)
             conn = get_connection()
             dwg_filter = selected_dwg if selected_dwg != "Todos os DWGs" else None
             desenhos_full = get_all_desenhos_with_revisoes(conn, dwg_filter)
@@ -1150,91 +1169,66 @@ else:
             if not desenhos_full:
                 st.warning("⚠️ Nenhum desenho encontrado para exportar")
             else:
+                # Colunas exactas na ordem da LSP V41 (34 colunas)
+                # Esta é a mesma ordem que é usada no import CSV
+                csv_columns = [
+                    'PROJ_NUM', 'PROJ_NOME', 'CLIENTE', 'OBRA', 'LOCALIZACAO', 'ESPECIALIDADE', 'PROJETOU',
+                    'FASE', 'FASE_PFIX', 'EMISSAO', 'DATA', 'PFIX', 'LAYOUT', 'DES_NUM', 'TIPO', 'ELEMENTO', 'TITULO',
+                    'REV_A', 'DATA_A', 'DESC_A', 'REV_B', 'DATA_B', 'DESC_B', 'REV_C', 'DATA_C', 'DESC_C',
+                    'REV_D', 'DATA_D', 'DESC_D', 'REV_E', 'DATA_E', 'DESC_E', 'DWG_SOURCE', 'ID_CAD'
+                ]
+                
                 # Converter para DataFrame com todos os 34 campos na ordem exata da LSP V41
                 export_data = []
                 for d in desenhos_full:
                     export_data.append({
-                        # Campos na ordem da LSP V41
-                        'PROJ_NUM': d.get('proj_num', ''),
-                        'PROJ_NOME': d.get('proj_nome', ''),
-                        'CLIENTE': d.get('cliente', ''),
-                        'OBRA': d.get('obra', ''),
-                        'LOCALIZACAO': d.get('localizacao', ''),
-                        'ESPECIALIDADE': d.get('especialidade', ''),
-                        'PROJETOU': d.get('projetou', ''),
-                        'FASE': d.get('fase', ''),
-                        'FASE_PFIX': d.get('fase_pfix', ''),
-                        'EMISSAO': d.get('emissao', ''),
-                        'DATA': d.get('data', ''),
-                        'PFIX': d.get('pfix', ''),
-                        'LAYOUT': d.get('layout_name', ''),
-                        'DES_NUM': d.get('des_num', ''),
-                        'TIPO': d.get('tipo_display', ''),
-                        'ELEMENTO': d.get('elemento', ''),
-                        'TITULO': d.get('titulo', ''),
-                        'REV_A': d.get('rev_a', ''),
-                        'DATA_A': d.get('data_a', ''),
-                        'DESC_A': d.get('desc_a', ''),
-                        'REV_B': d.get('rev_b', ''),
-                        'DATA_B': d.get('data_b', ''),
-                        'DESC_B': d.get('desc_b', ''),
-                        'REV_C': d.get('rev_c', ''),
-                        'DATA_C': d.get('data_c', ''),
-                        'DESC_C': d.get('desc_c', ''),
-                        'REV_D': d.get('rev_d', ''),
-                        'DATA_D': d.get('data_d', ''),
-                        'DESC_D': d.get('desc_d', ''),
-                        'REV_E': d.get('rev_e', ''),
-                        'DATA_E': d.get('data_e', ''),
-                        'DESC_E': d.get('desc_e', ''),
-                        'DWG_SOURCE': d.get('dwg_name', ''),
-                        'ID_CAD': d.get('id_cad', ''),
-                        # Colunas internas para ordenação
-                        '_tipo_display': d.get('tipo_display', ''),
-                        '_elemento_key': d.get('elemento_key', ''),
-                        '_des_num': d.get('des_num', ''),
+                        'PROJ_NUM': d.get('proj_num', '') or '',
+                        'PROJ_NOME': d.get('proj_nome', '') or '',
+                        'CLIENTE': d.get('cliente', '') or '',
+                        'OBRA': d.get('obra', '') or '',
+                        'LOCALIZACAO': d.get('localizacao', '') or '',
+                        'ESPECIALIDADE': d.get('especialidade', '') or '',
+                        'PROJETOU': d.get('projetou', '') or '',
+                        'FASE': d.get('fase', '') or '',
+                        'FASE_PFIX': d.get('fase_pfix', '') or '',
+                        'EMISSAO': d.get('emissao', '') or '',
+                        'DATA': d.get('data', '') or '',
+                        'PFIX': d.get('pfix', '') or '',
+                        'LAYOUT': d.get('layout_name', '') or '',
+                        'DES_NUM': d.get('des_num', '') or '',
+                        'TIPO': d.get('tipo_display', '') or '',
+                        'ELEMENTO': d.get('elemento', '') or '',
+                        'TITULO': d.get('titulo', '') or '',
+                        'REV_A': d.get('rev_a', '') or '',
+                        'DATA_A': d.get('data_a', '') or '',
+                        'DESC_A': d.get('desc_a', '') or '',
+                        'REV_B': d.get('rev_b', '') or '',
+                        'DATA_B': d.get('data_b', '') or '',
+                        'DESC_B': d.get('desc_b', '') or '',
+                        'REV_C': d.get('rev_c', '') or '',
+                        'DATA_C': d.get('data_c', '') or '',
+                        'DESC_C': d.get('desc_c', '') or '',
+                        'REV_D': d.get('rev_d', '') or '',
+                        'DATA_D': d.get('data_d', '') or '',
+                        'DESC_D': d.get('desc_d', '') or '',
+                        'REV_E': d.get('rev_e', '') or '',
+                        'DATA_E': d.get('data_e', '') or '',
+                        'DESC_E': d.get('desc_e', '') or '',
+                        'DWG_SOURCE': d.get('dwg_name', '') or '',
+                        'ID_CAD': d.get('id_cad', '') or '',
                     })
                 
-                export_df = pd.DataFrame(export_data)
+                # Criar DataFrame com colunas na ordem exacta
+                export_df = pd.DataFrame(export_data, columns=csv_columns)
                 
-                # Aplicar ordenação personalizada
-                if sort_by:
-                    sort_map = {
-                        'tipo_display': '_tipo_display',
-                        'elemento_key': '_elemento_key',
-                        'des_num': '_des_num',
-                        'layout_name': 'LAYOUT',
-                        'r': 'REV_A'
-                    }
-                    
-                    for i, col in enumerate(reversed(sort_by)):
-                        export_col = sort_map.get(col, col)
-                        if export_col in export_df.columns:
-                            if i == len(sort_by) - 1 and st.session_state.sort_values_order_1:
-                                order_map = {v: idx for idx, v in enumerate(st.session_state.sort_values_order_1)}
-                                export_df['_sort_key'] = export_df[export_col].map(lambda x: order_map.get(x, 999))
-                                export_df = export_df.sort_values('_sort_key', kind='stable')
-                                export_df = export_df.drop('_sort_key', axis=1)
-                            elif i == len(sort_by) - 2 and st.session_state.sort_values_order_2:
-                                order_map = {v: idx for idx, v in enumerate(st.session_state.sort_values_order_2)}
-                                export_df['_sort_key'] = export_df[export_col].map(lambda x: order_map.get(x, 999))
-                                export_df = export_df.sort_values('_sort_key', kind='stable')
-                                export_df = export_df.drop('_sort_key', axis=1)
-                            else:
-                                export_df = export_df.sort_values(export_col, kind='stable')
-                
-                # Remover colunas internas
-                export_df = export_df.drop(['_tipo_display', '_elemento_key', '_des_num'], axis=1, errors='ignore')
-                
-                # Save to output folder
+                # Save to output folder (sem ordenação adicional - mesma ordem do DB/import)
                 output_filename = f"ALTERACOES_PARA_AUTOCAD_{selected_dwg.replace(' ', '_')}.csv" if selected_dwg != "Todos os DWGs" else "ALTERACOES_PARA_AUTOCAD.csv"
                 output_path = Path(f"output/{output_filename}")
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 export_df.to_csv(output_path, sep=';', index=False, encoding='utf-8-sig')
                 
                 dwg_info = f" (DWG: {selected_dwg})" if selected_dwg != "Todos os DWGs" else ""
-                sort_info = f" | Ordenado por: {', '.join([sort_columns_available.get(c, c) for c in sort_by])}" if sort_by else ""
-                st.success(f"✅ CSV exportado: {output_path} ({len(export_df)} desenhos){dwg_info}{sort_info}")
+                st.success(f"✅ CSV exportado: {output_path} ({len(export_df)} desenhos){dwg_info}")
     
     # Statistics
     st.markdown("---")

@@ -254,9 +254,9 @@
 ;; ============================================================================
 ;; SECÇÃO 5: FORMATO TAB FIXO
 ;; ============================================================================
-;; Formato: PROJ_NUM-EST-PFIX+DES_NUM-EMISSAO-FASE_PFIX-R
-;; Exemplo: 669-EST-DIM03-E01-PB-C
-;; Regras: PFIX colado ao DES_NUM (sem hífen). FASE_PFIX antes do R.
+;; Formato: PROJ_NUM-EST-PFIX DES_NUM-EMISSAO-FASE_PFIX-R
+;; Exemplo: 669-EST-DIM 003-E01-PB-C
+;; Regras: PFIX separado do DES_NUM por espaço. FASE_PFIX antes do R.
 
 (defun BuildTabName (blk / projNum pfix desNum emissao fasePfix revR result)
   (setq projNum (GetAttValue blk "PROJ_NUM"))
@@ -269,9 +269,9 @@
   ;; Base: PROJ_NUM-EST
   (setq result (strcat projNum "-EST"))
   
-  ;; Adicionar PFIX+DES_NUM (PFIX colado ao DES_NUM, sem hífen entre eles)
+  ;; Adicionar PFIX DES_NUM (PFIX separado do DES_NUM por espaço)
   (if (and pfix (/= pfix "") (/= pfix " "))
-    (setq result (strcat result "-" pfix desNum))
+    (setq result (strcat result "-" pfix " " desNum))
     ;; Se não há PFIX, só adiciona DES_NUM
     (if (and desNum (/= desNum ""))
       (setq result (strcat result "-" desNum))))
@@ -1455,23 +1455,23 @@
   (while loopSub
     (textscr)
     (princ "\n\n   --- GERIR LAYOUTS ---")
-    (princ "\n   1. Gerar Novos (TEMPLATE)")
+    (princ "\n   1. Gerar Novos Desenhos")
     (princ "\n   2. Adicionar Desenho Intermedio")
-    (princ "\n   3. Ordenar Desenhos")
+    (princ "\n   3. Apagar Desenhos")
     (princ "\n   4. Numerar Desenhos")
+    (princ "\n   5. Ordenar Desenhos")
     (princ "\n   6. Atualizar Nomes Layouts")
-    (princ "\n   7. Apagar Desenhos")
     (princ "\n   9. Navegar (ver desenho)")
     (princ "\n   0. Voltar")
-    (initget "1 2 3 4 6 7 9 0")
-    (setq optSub (getkword "\n   Opcao [1/2/3/4/6/7/9/0]: "))
+    (initget "1 2 3 4 5 6 9 0")
+    (setq optSub (getkword "\n   Opcao [1/2/3/4/5/6/9/0]: "))
     (cond
       ((= optSub "1") (GerarLayoutsTemplate))
       ((= optSub "2") (AdicionarDesenhoIntermedio))
-      ((= optSub "3") (OrdenarTabs))
+      ((= optSub "3") (ApagarDesenhos))
       ((= optSub "4") (NumerarDesenhos))
+      ((= optSub "5") (OrdenarTabs))
       ((= optSub "6") (AtualizarNomesLayouts))
-      ((= optSub "7") (ApagarDesenhos))
       ((= optSub "9") (ModoNavegacao))
       ((= optSub "0") (setq loopSub nil))
       ((= optSub nil) (setq loopSub nil))))
@@ -1547,7 +1547,8 @@
         (if (and insertNum (> insertNum 0) (<= insertNum (1+ maxNum)))
           (progn
             ;; 1. Renumerar desenhos >= insertNum (de trás para frente)
-            (princ "\nA renumerar desenhos existentes...")
+            ;; Na numeração sequencial, limpar PFIX de todos os desenhos
+            (princ "\nA renumerar desenhos existentes (limpando PFIX)...")
             (setq countRenumbered 0)
             (setq i maxNum)
             (while (>= i insertNum)
@@ -1559,6 +1560,8 @@
                       (if (= (atoi (GetAttValue blk "DES_NUM")) i)
                         (progn
                           (UpdateSingleTag (vla-get-Handle blk) "DES_NUM" (FormatNum (1+ i)))
+                          ;; Limpar PFIX na numeração sequencial
+                          (UpdateSingleTag (vla-get-Handle blk) "PFIX" "")
                           (UpdateTabName (vla-get-Handle blk))
                           (setq countRenumbered (1+ countRenumbered))))))))
               (setq i (1- i)))
@@ -2022,47 +2025,153 @@
 )
 
 ;; Gerar Layouts a partir do Template
-(defun GerarLayoutsTemplate ( / doc layouts startNum endNum layName count paperSpace foundLegend)
+(defun GerarLayoutsTemplate ( / doc layouts startNum endNum layName count paperSpace totalGerados
+                                ;; Dados do projeto (copiados do primeiro desenho)
+                                projNum projNome cliente obra localizacao especialidade projetou
+                                fase fasePfix emissao dataEmissao
+                                ;; Opcoes do user
+                                useDadosProjeto useTipo useElemento usePfix
+                                newTipo newElemento newPfix
+                                ;; Loop
+                                continuar i newHandle)
   (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
   (setq layouts (vla-get-Layouts doc))
+  (setq totalGerados 0)
   
   (if (not (catch-apply 'vla-Item (list layouts "TEMPLATE")))
     (progn (alert "ERRO: Layout 'TEMPLATE' não existe.") (exit)))
   
-  (princ "\n\n=== GERAR NOVOS LAYOUTS ===")
-  (setq startNum (getint "\nNúmero do Primeiro Desenho (ex: 6): "))
-  (setq endNum (getint "\nNúmero do Último Desenho (ex: 10): "))
-  
-  (if (and startNum endNum (> endNum 0) (>= endNum startNum))
-    (progn
-      (setq count 0)
-      (setq i startNum)
-      (while (<= i endNum)
-        (setq layName (strcat "Desenho_" (FormatNum i)))
-        (if (not (catch-apply 'vla-Item (list layouts layName)))
+  ;; Recolher dados do projeto do primeiro desenho existente
+  (setq projNum nil)
+  (vlax-for lay layouts
+    (if (and (not projNum)
+             (/= (vla-get-ModelType lay) :vlax-true)
+             (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
+      (vlax-for blk (vla-get-Block lay)
+        (if (and (not projNum) (IsTargetBlock blk))
           (progn
-            (princ (strcat "\nA criar " layName "..."))
-            (setvar "CMDECHO" 0)
-            (command "_.LAYOUT" "_Copy" "TEMPLATE" layName)
-            (setvar "CMDECHO" 1)
-            (setvar "CTAB" layName)
-            
-            ;; Atualizar DES_NUM no novo layout
-            (setq paperSpace (vla-get-PaperSpace doc))
-            (vlax-for blk paperSpace
-              (if (IsTargetBlock blk)
-                (progn
-                  (UpdateSingleTag (vla-get-Handle blk) "DES_NUM" (FormatNum i))
-                  (UpdateTabName (vla-get-Handle blk)))))
-            
-            (setq count (1+ count)))
-          (princ (strcat "\nLayout " layName " já existe.")))
-        (setq i (1+ i)))
-      
-      (vla-Regen doc acActiveViewport)
-      (WriteLog (strcat "GERAR LAYOUTS: Criados " (itoa count) " layouts"))
-      (alert (strcat "Sucesso!\nGerados " (itoa count) " layouts.")))
-    (princ "\nParâmetros inválidos."))
+            (setq projNum (GetAttValue blk "PROJ_NUM"))
+            (setq projNome (GetAttValue blk "PROJ_NOME"))
+            (setq cliente (GetAttValue blk "CLIENTE"))
+            (setq obra (GetAttValue blk "OBRA"))
+            (setq localizacao (GetAttValue blk "LOCALIZACAO"))
+            (setq especialidade (GetAttValue blk "ESPECIALIDADE"))
+            (setq projetou (GetAttValue blk "PROJETOU"))
+            (setq fase (GetAttValue blk "FASE"))
+            (setq fasePfix (GetAttValue blk "FASE_PFIX"))
+            (setq emissao (GetAttValue blk "EMISSAO"))
+            (setq dataEmissao (GetAttValue blk "DATA")))))))
+  
+  (princ "\n\n=== GERAR NOVOS DESENHOS ===")
+  
+  ;; Loop principal
+  (setq continuar T)
+  (while continuar
+    
+    ;; 1. Perguntar numeros a gerar
+    (princ "\n\n--- NUMEROS DOS DESENHOS ---")
+    (setq startNum (getint "\nNumero do Primeiro Desenho (ex: 1): "))
+    (setq endNum (getint "\nNumero do Ultimo Desenho (ex: 5): "))
+    
+    (if (and startNum endNum (> endNum 0) (>= endNum startNum))
+      (progn
+        ;; 2. Preencher com Dados do Projeto?
+        (initget "Sim Nao")
+        (setq useDadosProjeto (getkword "\nPreencher com Dados do Projeto, Fase e Emissao? [Sim/Nao] <Sim>: "))
+        (if (null useDadosProjeto) (setq useDadosProjeto "Sim"))
+        
+        ;; 3. Definir TIPO?
+        (initget "Sim Nao")
+        (setq useTipo (getkword "\nDefinir TIPO para estes desenhos? [Sim/Nao] <Nao>: "))
+        (if (= useTipo "Sim")
+          (setq newTipo (getstring T "\nTIPO: "))
+          (setq newTipo nil))
+        
+        ;; 4. Definir ELEMENTO?
+        (initget "Sim Nao")
+        (setq useElemento (getkword "\nDefinir ELEMENTO para estes desenhos? [Sim/Nao] <Nao>: "))
+        (if (= useElemento "Sim")
+          (setq newElemento (getstring T "\nELEMENTO: "))
+          (setq newElemento nil))
+        
+        ;; 5. Definir PFIX?
+        (initget "Sim Nao")
+        (setq usePfix (getkword "\nDefinir PFIX para estes desenhos? [Sim/Nao] <Nao>: "))
+        (if (= usePfix "Sim")
+          (setq newPfix (getstring T "\nPFIX (ex: DIM, ARM, FUN): "))
+          (setq newPfix nil))
+        
+        ;; Gerar layouts
+        (princ "\nA gerar desenhos...")
+        (setq count 0)
+        (setq i startNum)
+        (while (<= i endNum)
+          (setq layName (strcat "Desenho_" (FormatNum i)))
+          (if (not (catch-apply 'vla-Item (list layouts layName)))
+            (progn
+              (princ (strcat "\n  Criando " layName "..."))
+              (setvar "CMDECHO" 0)
+              (command "_.LAYOUT" "_Copy" "TEMPLATE" layName)
+              (setvar "CMDECHO" 1)
+              (setvar "CTAB" layName)
+              
+              ;; Preencher atributos no novo layout
+              (setq paperSpace (vla-get-PaperSpace doc))
+              (vlax-for blk paperSpace
+                (if (IsTargetBlock blk)
+                  (progn
+                    (setq newHandle (vla-get-Handle blk))
+                    ;; DES_NUM sempre
+                    (UpdateSingleTag newHandle "DES_NUM" (FormatNum i))
+                    
+                    ;; Dados do projeto (se escolhido)
+                    (if (= useDadosProjeto "Sim")
+                      (progn
+                        (if projNum (UpdateSingleTag newHandle "PROJ_NUM" projNum))
+                        (if projNome (UpdateSingleTag newHandle "PROJ_NOME" projNome))
+                        (if cliente (UpdateSingleTag newHandle "CLIENTE" cliente))
+                        (if obra (UpdateSingleTag newHandle "OBRA" obra))
+                        (if localizacao (UpdateSingleTag newHandle "LOCALIZACAO" localizacao))
+                        (if especialidade (UpdateSingleTag newHandle "ESPECIALIDADE" especialidade))
+                        (if projetou (UpdateSingleTag newHandle "PROJETOU" projetou))
+                        (if fase (UpdateSingleTag newHandle "FASE" fase))
+                        (if fasePfix (UpdateSingleTag newHandle "FASE_PFIX" fasePfix))
+                        (if emissao (UpdateSingleTag newHandle "EMISSAO" emissao))
+                        (if dataEmissao (UpdateSingleTag newHandle "DATA" dataEmissao))))
+                    
+                    ;; TIPO (se definido)
+                    (if (and newTipo (/= newTipo ""))
+                      (UpdateSingleTag newHandle "TIPO" newTipo))
+                    
+                    ;; ELEMENTO (se definido)
+                    (if (and newElemento (/= newElemento ""))
+                      (UpdateSingleTag newHandle "ELEMENTO" newElemento))
+                    
+                    ;; PFIX (se definido)
+                    (if (and newPfix (/= newPfix ""))
+                      (UpdateSingleTag newHandle "PFIX" newPfix))
+                    
+                    ;; Atualizar nome do tab
+                    (UpdateTabName newHandle))))
+              
+              (setq count (1+ count))
+              (setq totalGerados (1+ totalGerados)))
+            (princ (strcat "\n  Layout " layName " ja existe.")))
+          (setq i (1+ i)))
+        
+        (vla-Regen doc acActiveViewport)
+        (princ (strcat "\n\nGerados " (itoa count) " desenhos nesta serie."))
+        (WriteLog (strcat "GERAR: " (itoa count) " layouts criados"
+                         (if newPfix (strcat " PFIX=" newPfix) "")
+                         (if newTipo (strcat " TIPO=" newTipo) ""))))
+      (princ "\nParametros invalidos."))
+    
+    ;; 6. Gerar mais desenhos?
+    (initget "Sim Nao")
+    (if (/= (getkword "\n\nGerar mais desenhos? [Sim/Nao] <Nao>: ") "Sim")
+      (setq continuar nil)))
+  
+  (alert (strcat "Concluido!\n\nTotal de desenhos gerados: " (itoa totalGerados)))
   (princ)
 )
 
@@ -2173,7 +2282,7 @@
 (princ "\n   EMISSAO, PFIX")
 (princ "\n========================================")
 (princ "\n Formato TAB:")
-(princ "\n   PROJ_NUM-EST-PFIX+DES_NUM-EMISSAO-FASE_PFIX-R")
-(princ "\n   Ex: 669-EST-DIM03-E01-PB-C")
+(princ "\n   PROJ_NUM-EST-PFIX DES_NUM-EMISSAO-FASE_PFIX-R")
+(princ "\n   Ex: 669-EST-DIM 003-E01-PB-C")
 (princ "\n========================================")
 (princ)

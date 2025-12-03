@@ -43,3 +43,10 @@
 [03-12-2025 05:29:31] [JSJ] FASE: 'ESTUDO PREVIO' PFIX:'EP' em 6 desenhos
 [03-12-2025 05:29:43] [JSJ] EXPORT CSV COMPLETO: 6 desenhos
 [03-12-2025 05:38:38] [JSJ] EXPORT CSV COMPLETO: 6 desenhos
+[03-12-2025 05:42:48] [JSJ] PFIX: 'DIM' em 1 desenhos
+[03-12-2025 05:42:58] [JSJ] PFIX: 'DIM' em 2 desenhos
+[03-12-2025 05:43:11] [JSJ] PFIX: 'BA' em 1 desenhos
+[03-12-2025 05:43:25] [JSJ] PFIX: 'PRE' em 2 desenhos
+[03-12-2025 05:43:43] [JSJ] NUMERAR PFIX: 6 desenhos renumerados
+[03-12-2025 05:44:29] [JSJ] INSERIR PFIX: PRE 002 inserido, 1 renumerados
+[03-12-2025 05:44:51] [JSJ] ORDENAR PFIX: 7 layouts - Ordem: DIM, BA, PRE

@@ -1,10 +1,20 @@
 ;; ============================================================================
-;; FERRAMENTA UNIFICADA: GESTAO DESENHOS JSJ (V40.1 - Import DB fix)
+;; JSJ-GESTAO DESENHOS AutoLISP - V41.0
+;; Gestão de Legendas para desenhos estruturais
+;; ============================================================================
+;; ATRIBUTOS DO BLOCO LEGENDA_JSJ_V1:
+;;   Globais: CLIENTE, OBRA, LOCALIZACAO, ESPECIALIDADE, FASE, DATA, PROJETOU,
+;;            PROJ_NUM, PROJ_NOME, FASE_PFIX, EMISSAO, PFIX
+;;   Individuais: DES_NUM, TIPO, ELEMENTO, TITULO, REV_A-E, DATA_A-E, DESC_A-E, R
+;;   Calculados: ELEMENTO_TITULO (ELEMENTO + TITULO)
+;; ============================================================================
+;; FORMATO NOME TAB (FIXO):
+;;   PROJ_NUM-"EST"-PFIX-DES_NUM-EMISSAO-R
+;;   Exemplo: 779-EST-BA-01-E00-A (ou 779-EST-BA-01-E00 se sem revisão)
 ;; ============================================================================
 
 ;; Variáveis globais (persistem durante sessão)
 (setq *JSJ_USER* nil)
-(setq *JSJ_TAB_FORMAT* nil) ;; Formato de nomenclatura dos tabs
 
 ;; ============================================================================
 ;; FUNCOES AUXILIARES BASICAS (devem estar no inicio)
@@ -357,33 +367,62 @@
   (while loop
     (textscr)
     (princ "\n\n==============================================")
-    (princ "\n          GESTAO DESENHOS JSJ - MENU          ")
+    (princ "\n       GESTAO DESENHOS JSJ V41.0 - MENU       ")
     (princ "\n==============================================")
+    (princ "\n 0. Dados do Projeto")
     (princ "\n 1. Modificar Legendas")
     (princ "\n 2. Exportar Lista de Desenhos")
     (princ "\n 3. Importar Lista de Desenhos")
     (princ "\n 4. Gerir Layouts")
     (princ "\n----------------------------------------------")
     (princ "\n 9. Navegar (ver desenho)")
-    (princ "\n 0. Sair")
+    (princ "\n X. Sair")
     (princ "\n==============================================")
 
-    (initget "1 2 3 4 9 0")
-    (setq opt (getkword "\nEscolha uma opcao [1/2/3/4/9/0]: "))
+    (initget "0 1 2 3 4 9 X")
+    (setq opt (getkword "\nEscolha uma opcao [0/1/2/3/4/9/X]: "))
 
     (cond
+      ((= opt "0") (Menu_DadosProjeto))
       ((= opt "1") (Menu_ModificarLegendas))
       ((= opt "2") (Menu_Exportar))
       ((= opt "3") (Menu_Importar))
       ((= opt "4") (Menu_GerirLayouts))
       ((= opt "9") (ModoNavegacao))
-      ((= opt "0") (setq loop nil))
+      ((= opt "X") (setq loop nil))
       ((= opt nil) (setq loop nil)) 
     )
   )
   (graphscr)
   (princ "\nGestao Desenhos JSJ Terminada.")
   (princ)
+)
+
+;; ============================================================================
+;; SUBMENU 0: DADOS DO PROJETO
+;; ============================================================================
+(defun Menu_DadosProjeto ( / loopSub optSub)
+  (setq loopSub T)
+  (while loopSub
+    (textscr)
+    (princ "\n\n   --- DADOS DO PROJETO ---")
+    (princ (strcat "\n   [Utilizador: " (if *JSJ_USER* *JSJ_USER* "JSJ") "]"))
+    (princ "\n   1. Editar Campos Globais")
+    (princ "\n   2. Definir Utilizador")
+    (princ "\n   3. Alterar Fase do Projeto")
+    (princ "\n   0. Voltar")
+    (initget "1 2 3 0")
+    (setq optSub (getkword "\n   Opcao [1/2/3/0]: "))
+    (cond
+      ((= optSub "1") (EditarCampoGlobal '("CLIENTE" "OBRA" "LOCALIZACAO" "ESPECIALIDADE" 
+                                           "DATA" "PROJETOU" "PROJ_NUM" "PROJ_NOME" 
+                                           "FASE_PFIX" "EMISSAO" "PFIX")))
+      ((= optSub "2") (SetCurrentUser))
+      ((= optSub "3") (AlterarFaseProjeto))
+      ((= optSub "0") (setq loopSub nil))
+      ((= optSub nil) (setq loopSub nil))
+    )
+  )
 )
 
 ;; ============================================================================
@@ -441,22 +480,16 @@
     (princ "\n   1. Emitir Revisao")
     (princ "\n   2. Alterar Campo (Global ou Selecao)")
     (princ "\n   3. Alterar Desenho Individual")
-    (princ "\n   4. Definir Utilizador")
-    (princ "\n   5. Alterar Fase de Projeto")
-    (princ "\n   6. Alterar ELEMENTO (Global)")
-    (princ "\n   7. Prefixo DES_NUM")
+    (princ "\n   4. Atualizar Nomes Layouts")
     (princ "\n   9. Navegar (ver desenho)")
     (princ "\n   0. Voltar")
-    (initget "1 2 3 4 5 6 7 9 0")
-    (setq optSub (getkword "\n   Opcao [1/2/3/4/5/6/7/9/0]: "))
+    (initget "1 2 3 4 9 0")
+    (setq optSub (getkword "\n   Opcao [1/2/3/4/9/0]: "))
     (cond
       ((= optSub "1") (Menu_EmitirRevisao))
       ((= optSub "2") (Run_GlobalVars_Selective_V29))
       ((= optSub "3") (ProcessManualReview))
-      ((= optSub "4") (SetCurrentUser))
-      ((= optSub "5") (AlterarFaseProjeto))
-      ((= optSub "6") (AlterarElementoGlobal))
-      ((= optSub "7") (AdicionarPrefixoDES_NUM))
+      ((= optSub "4") (AtualizarNomesLayouts))
       ((= optSub "9") (ModoNavegacao))
       ((= optSub "0") (setq loopSub nil))
       ((= optSub nil) (setq loopSub nil))
@@ -579,35 +612,52 @@
 )
 
 ;; ============================================================================
-;; ALTERAR ELEMENTO GLOBAL - Altera ELEMENTO em múltiplos desenhos
+;; EDITAR CAMPO GLOBAL - Função genérica para editar qualquer campo
 ;; ============================================================================
-(defun AlterarElementoGlobal ( / doc newElemento targets targetList count desNum blkHandle currentElemento)
+;; Recebe uma lista de tags permitidos e permite ao utilizador escolher qual editar
+;; Suporta aplicar a todos os desenhos ou a uma seleção específica
+(defun EditarCampoGlobal (tagList / doc i choice selectedTag newVal targets targetList count desNum blkHandle currentVal)
   (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
   
-  (princ "\n\n=== ALTERAR ELEMENTO (GLOBAL) ===")
-  (princ "\nEste campo aparece no ELEMENTO_TITULO junto com o titulo.")
-  (princ "\nExemplo: 'Estabilidade' ou 'Estruturas Betao'")
+  (princ "\n\n=== EDITAR CAMPO GLOBAL ===")
+  (princ "\n\nCampos disponiveis:")
   
-  ;; Mostrar valor atual do primeiro desenho encontrado
-  (vlax-for lay (vla-get-Layouts doc)
-    (if (and (not currentElemento)
-             (/= (vla-get-ModelType lay) :vlax-true)
-             (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
-      (vlax-for blk (vla-get-Block lay)
-        (if (and (not currentElemento) (IsTargetBlock blk))
-          (setq currentElemento (GetAttValue blk "ELEMENTO"))
+  ;; Listar campos
+  (setq i 1)
+  (foreach tag tagList
+    (princ (strcat "\n " (itoa i) ". " tag))
+    (setq i (1+ i))
+  )
+  (princ "\n 0. Cancelar")
+  
+  (princ "\n-----------------------------------------")
+  (setq choice (getint "\nEscolha o campo: "))
+  
+  (if (and choice (> choice 0) (<= choice (length tagList)))
+    (progn
+      (setq selectedTag (nth (1- choice) tagList))
+      
+      ;; Mostrar valor atual do primeiro desenho encontrado
+      (setq currentVal nil)
+      (vlax-for lay (vla-get-Layouts doc)
+        (if (and (not currentVal)
+                 (/= (vla-get-ModelType lay) :vlax-true)
+                 (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
+          (vlax-for blk (vla-get-Block lay)
+            (if (and (not currentVal) (IsTargetBlock blk))
+              (setq currentVal (GetAttValue blk selectedTag))
+            )
+          )
         )
       )
-    )
-  )
-  (if currentElemento
-    (princ (strcat "\n\nValor atual: '" currentElemento "'"))
-  )
-  
-  (setq newElemento (getstring T "\nNovo ELEMENTO: "))
-  
-  (if (or newElemento (= newElemento ""))
-    (progn
+      (if currentVal
+        (princ (strcat "\n\nValor atual: '" currentVal "'"))
+      )
+      
+      (princ (strcat "\n--> A editar: " selectedTag))
+      (setq newVal (getstring T "\nNovo Valor: "))
+      
+      ;; Escolher desenhos alvo
       (princ "\n\n--> Aplicar a quais desenhos?")
       (princ "\n    Enter = TODOS")
       (princ "\n    Lista = 1,2,5 ou 1-10")
@@ -618,7 +668,7 @@
         (setq targetList (StrSplit targets ","))
       )
       
-      (princ "\nA aplicar ELEMENTO... ")
+      (princ "\nA aplicar alteracoes... ")
       (setq count 0)
       
       (vlax-for lay (vla-get-Layouts doc)
@@ -630,11 +680,10 @@
                 (setq desNum (GetAttValue blk "DES_NUM"))
                 (setq blkHandle (vla-get-Handle blk))
                 
-                (if (or (null targetList)
+                (if (or (null targetList) 
                         (IsNumberInList desNum targetList))
                   (progn
-                    ;; Usar UpdateSingleTag que automaticamente chama UpdateElementoTitulo
-                    (UpdateSingleTag blkHandle "ELEMENTO" newElemento)
+                    (UpdateSingleTag blkHandle selectedTag newVal)
                     (setq count (1+ count))
                   )
                 )
@@ -645,15 +694,17 @@
       )
       
       (vla-Regen doc acActiveViewport)
-      (WriteLog (strcat "ELEMENTO GLOBAL: '" newElemento "' em " (itoa count) " desenhos"))
-      (alert (strcat "Concluído!\n\nELEMENTO = '" newElemento "'\nAtualizado em " (itoa count) " desenhos.\n\nO campo ELEMENTO_TITULO foi recalculado automaticamente."))
+      (WriteLog (strcat "GLOBAL: " selectedTag " = '" newVal "' em " (itoa count) " desenhos"))
+      (alert (strcat "Concluido!\nO campo '" selectedTag "' foi atualizado em " (itoa count) " desenhos."))
+    )
+    (if (/= choice 0)
+      (princ "\nOpcao invalida.")
+      (princ "\nCancelado.")
     )
   )
   (princ)
 )
 
-;; ============================================================================
-;; ADICIONAR PREFIXO AO DES_NUM - Adiciona prefixo e atualiza tabs automaticamente
 ;; ============================================================================
 ;; EXTRAIR NUMERO DE UMA STRING (remove letras, mantém dígitos)
 ;; Ex: "DIM01" -> "01", "BA02" -> "02", "03" -> "03"
@@ -669,285 +720,6 @@
     (setq i (1+ i))
   )
   (if (= result "") "00" result)
-)
-
-;; ============================================================================
-;; ADICIONAR/SUBSTITUIR PREFIXO NO DES_NUM
-;; Menu: 1) Todos ou 2) Por Tipo
-;; Se Por Tipo: 1) Por Elemento ou 2) Todos do tipo
-;; ============================================================================
-(defun AdicionarPrefixoDES_NUM ( / doc prefix count desNum blkHandle newDesNum currentDesNum currentElemento currentTipo modoAplicar modoTipo tipoList elementoList i item numPart tipoPrefixos prefixTipo tipoFiltro tipoSelecionado targets targetList)
-  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
-  
-  (princ "\n\n=== ADICIONAR/SUBSTITUIR PREFIXO DES_NUM ===")
-  (princ "\nSubstitui prefixo existente ou adiciona novo.")
-  (princ "\nEx: 'DIM01' com prefixo 'BA' -> 'BA01'")
-  
-  ;; Mostrar exemplo
-  (vlax-for lay (vla-get-Layouts doc)
-    (if (and (not currentDesNum)
-             (/= (vla-get-ModelType lay) :vlax-true)
-             (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
-      (vlax-for blk (vla-get-Block lay)
-        (if (and (not currentDesNum) (IsTargetBlock blk))
-          (progn
-            (setq currentDesNum (GetAttValue blk "DES_NUM"))
-            (setq currentTipo (GetAttValue blk "TIPO"))
-          )
-        )
-      )
-    )
-  )
-  (if currentDesNum
-    (princ (strcat "\nExemplo: DES_NUM='" currentDesNum "' -> numero='" (ExtractNumberFromDesNum currentDesNum) "'"))
-  )
-  
-  ;; Menu principal
-  (princ "\n\n--> Aplicar a:")
-  (princ "\n    1. TODOS os desenhos (mesmo prefixo)")
-  (princ "\n    2. Por TIPO (prefixo diferente por tipo)")
-  (initget "1 2")
-  (setq modoAplicar (getkword "\n    Opcao [1/2] <1>: "))
-  (if (null modoAplicar) (setq modoAplicar "1"))
-  
-  (cond
-    ;; ========== MODO 1: TODOS ==========
-    ((= modoAplicar "1")
-     (setq prefix (getstring T "\nNovo prefixo (Enter para remover): "))
-     
-     (princ "\n\n--> Quais desenhos?")
-     (princ "\n    Enter = TODOS")
-     (princ "\n    Lista = 1,2,5 ou 1-10")
-     (setq targets (getstring T "\nDesenhos: "))
-     (setq targetList nil)
-     (if (/= targets "") (setq targetList (StrSplit targets ",")))
-     
-     (setq count 0)
-     (vlax-for lay (vla-get-Layouts doc)
-       (if (and (/= (vla-get-ModelType lay) :vlax-true)
-                (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
-         (vlax-for blk (vla-get-Block lay)
-           (if (IsTargetBlock blk)
-             (progn
-               (setq desNum (GetAttValue blk "DES_NUM"))
-               (setq numPart (ExtractNumberFromDesNum desNum))
-               (setq blkHandle (vla-get-Handle blk))
-               (if (or (null targetList) (IsNumberInList numPart targetList))
-                 (progn
-                   (setq newDesNum (strcat prefix numPart))
-                   (UpdateSingleTag blkHandle "DES_NUM" newDesNum)
-                   (UpdateTabName blkHandle nil)
-                   (setq count (1+ count))
-                   (princ (strcat "\n  " desNum " -> " newDesNum))
-                 )
-               )
-             )
-           )
-         )
-       )
-     )
-     (vla-Regen doc acActiveViewport)
-     (alert (strcat "Prefixo '" prefix "' aplicado a " (itoa count) " desenhos."))
-    )
-    
-    ;; ========== MODO 2: Por TIPO ==========
-    ((= modoAplicar "2")
-     ;; Listar tipos
-     (setq tipoList '())
-     (vlax-for lay (vla-get-Layouts doc)
-       (if (and (/= (vla-get-ModelType lay) :vlax-true)
-                (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
-         (vlax-for blk (vla-get-Block lay)
-           (if (IsTargetBlock blk)
-             (progn
-               (setq currentTipo (GetAttValue blk "TIPO"))
-               (if (and currentTipo (/= currentTipo ""))
-                 (if (not (member currentTipo tipoList))
-                   (setq tipoList (cons currentTipo tipoList))
-                 )
-               )
-             )
-           )
-         )
-       )
-     )
-     (setq tipoList (reverse tipoList))
-     
-     (princ "\n\nTIPOS encontrados:")
-     (setq i 1)
-     (foreach item tipoList
-       (princ (strcat "\n  " (itoa i) ". " item))
-       (setq i (1+ i))
-     )
-     
-     (princ "\n\n--> Quais TIPOS? (Enter=TODOS, ou 1,2,3): ")
-     (setq tipoFiltro (getstring T ""))
-     (setq tipoSelecionado nil)
-     (if (/= tipoFiltro "") (setq tipoSelecionado (StrSplit tipoFiltro ",")))
-     
-     ;; Submenu: por elemento ou todos do tipo
-     (princ "\n\n--> Dentro de cada tipo:")
-     (princ "\n    1. Por ELEMENTO (prefixo por elemento)")
-     (princ "\n    2. TODOS desenhos do tipo (mesmo prefixo)")
-     (initget "1 2")
-     (setq modoTipo (getkword "\n    Opcao [1/2] <2>: "))
-     (if (null modoTipo) (setq modoTipo "2"))
-     
-     (cond
-       ;; Por ELEMENTO dentro do tipo
-       ((= modoTipo "1")
-        ;; Listar elementos
-        (setq elementoList '())
-        (vlax-for lay (vla-get-Layouts doc)
-          (if (and (/= (vla-get-ModelType lay) :vlax-true)
-                   (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
-            (vlax-for blk (vla-get-Block lay)
-              (if (IsTargetBlock blk)
-                (progn
-                  (setq currentTipo (GetAttValue blk "TIPO"))
-                  (setq currentElemento (GetAttValue blk "ELEMENTO"))
-                  ;; Só considerar se tipo está selecionado
-                  (setq i 1)
-                  (foreach item tipoList
-                    (if (and (or (null tipoSelecionado) (member (itoa i) tipoSelecionado))
-                             (= currentTipo item)
-                             currentElemento (/= currentElemento ""))
-                      (if (not (member currentElemento elementoList))
-                        (setq elementoList (cons currentElemento elementoList))
-                      )
-                    )
-                    (setq i (1+ i))
-                  )
-                )
-              )
-            )
-          )
-        )
-        (setq elementoList (reverse elementoList))
-        
-        (princ "\n\nELEMENTOS nos tipos selecionados:")
-        (setq i 1)
-        (foreach item elementoList
-          (princ (strcat "\n  " (itoa i) ". " item))
-          (setq i (1+ i))
-        )
-        
-        ;; Pedir prefixo para cada elemento
-        (setq tipoPrefixos '())
-        (princ "\n\nPrefixo para cada ELEMENTO:")
-        (foreach item elementoList
-          (setq prefixTipo (getstring T (strcat "\n  " item ": ")))
-          (setq tipoPrefixos (cons (cons item prefixTipo) tipoPrefixos))
-        )
-        (setq tipoPrefixos (reverse tipoPrefixos))
-        
-        ;; Aplicar
-        (setq count 0)
-        (vlax-for lay (vla-get-Layouts doc)
-          (if (and (/= (vla-get-ModelType lay) :vlax-true)
-                   (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
-            (vlax-for blk (vla-get-Block lay)
-              (if (IsTargetBlock blk)
-                (progn
-                  (setq desNum (GetAttValue blk "DES_NUM"))
-                  (setq currentTipo (GetAttValue blk "TIPO"))
-                  (setq currentElemento (GetAttValue blk "ELEMENTO"))
-                  (setq numPart (ExtractNumberFromDesNum desNum))
-                  (setq blkHandle (vla-get-Handle blk))
-                  
-                  ;; Verificar se tipo está selecionado
-                  (setq prefixTipo nil)
-                  (setq i 1)
-                  (foreach item tipoList
-                    (if (and (or (null tipoSelecionado) (member (itoa i) tipoSelecionado))
-                             (= currentTipo item))
-                      ;; Encontrar prefixo do elemento
-                      (foreach elem tipoPrefixos
-                        (if (= (car elem) currentElemento)
-                          (setq prefixTipo (cdr elem))
-                        )
-                      )
-                    )
-                    (setq i (1+ i))
-                  )
-                  
-                  (if prefixTipo
-                    (progn
-                      (setq newDesNum (strcat prefixTipo numPart))
-                      (UpdateSingleTag blkHandle "DES_NUM" newDesNum)
-                      (UpdateTabName blkHandle nil)
-                      (setq count (1+ count))
-                      (princ (strcat "\n  [" currentElemento "] " desNum " -> " newDesNum))
-                    )
-                  )
-                )
-              )
-            )
-          )
-        )
-        (vla-Regen doc acActiveViewport)
-        (alert (strcat "Prefixos por elemento aplicados a " (itoa count) " desenhos."))
-       )
-       
-       ;; TODOS do tipo
-       ((= modoTipo "2")
-        ;; Pedir prefixo para cada tipo selecionado
-        (setq tipoPrefixos '())
-        (princ "\n\nPrefixo para cada TIPO:")
-        (setq i 1)
-        (foreach item tipoList
-          (if (or (null tipoSelecionado) (member (itoa i) tipoSelecionado))
-            (progn
-              (setq prefixTipo (getstring T (strcat "\n  " item ": ")))
-              (setq tipoPrefixos (cons (cons item prefixTipo) tipoPrefixos))
-            )
-          )
-          (setq i (1+ i))
-        )
-        (setq tipoPrefixos (reverse tipoPrefixos))
-        
-        ;; Aplicar
-        (setq count 0)
-        (vlax-for lay (vla-get-Layouts doc)
-          (if (and (/= (vla-get-ModelType lay) :vlax-true)
-                   (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
-            (vlax-for blk (vla-get-Block lay)
-              (if (IsTargetBlock blk)
-                (progn
-                  (setq desNum (GetAttValue blk "DES_NUM"))
-                  (setq currentTipo (GetAttValue blk "TIPO"))
-                  (setq numPart (ExtractNumberFromDesNum desNum))
-                  (setq blkHandle (vla-get-Handle blk))
-                  
-                  ;; Encontrar prefixo do tipo
-                  (setq prefixTipo nil)
-                  (foreach item tipoPrefixos
-                    (if (= (car item) currentTipo)
-                      (setq prefixTipo (cdr item))
-                    )
-                  )
-                  
-                  (if prefixTipo
-                    (progn
-                      (setq newDesNum (strcat prefixTipo numPart))
-                      (UpdateSingleTag blkHandle "DES_NUM" newDesNum)
-                      (UpdateTabName blkHandle nil)
-                      (setq count (1+ count))
-                      (princ (strcat "\n  [" currentTipo "] " desNum " -> " newDesNum))
-                    )
-                  )
-                )
-              )
-            )
-          )
-        )
-        (vla-Regen doc acActiveViewport)
-        (alert (strcat "Prefixos por tipo aplicados a " (itoa count) " desenhos."))
-       )
-     )
-    )
-  )
-  (princ)
 )
 
 ;; ============================================================================
@@ -1630,127 +1402,19 @@
     (princ "\n   1. Gerar Novos (TEMPLATE)")
     (princ "\n   2. Ordenar Tabs")
     (princ "\n   3. Numerar Desenhos")
-    (princ "\n   5. Definir Formato TAB")
-    (princ "\n   6. Aplicar Formato TAB")
-    (princ "\n   7. Apagar Desenhos")
+    (princ "\n   4. Apagar Desenhos")
     (princ "\n   0. Voltar")
-    (initget "1 2 3 5 6 7 0")
-    (setq optSub (getkword "\n   Opcao [1/2/3/5/6/7/0]: "))
+    (initget "1 2 3 4 0")
+    (setq optSub (getkword "\n   Opcao [1/2/3/4/0]: "))
     (cond
       ((= optSub "1") (Run_GenerateLayouts_FromTemplate_V26))
       ((= optSub "2") (Run_SortLayouts_Engine))
       ((= optSub "3") (NumerarDesenhos))
-      ((= optSub "5") (DefinirFormatoTab))
-      ((= optSub "6") (AplicarFormatoTab))
-      ((= optSub "7") (ApagarDesenhos))
+      ((= optSub "4") (ApagarDesenhos))
       ((= optSub "0") (setq loopSub nil))
       ((= optSub nil) (setq loopSub nil))
     )
   )
-)
-
-;; ============================================================================
-;; DEFINIR FORMATO TAB (Nova funcionalidade V38)
-;; ============================================================================
-;; Define o formato de nomenclatura dos tabs
-;; Formato fixo: "[NumProj]"-"EST"-(DES_NUM)-"PE"-"E[NumEmissao]"-(R)
-;; Exemplo: 779-EST-001-PE-E00-A ou 779-EST-001-PE-E00 (sem revisão)
-(defun DefinirFormatoTab ( / numProj numEmissao userFormat)
-  (princ "\n\n=== DEFINIR FORMATO TAB ===")
-  (princ "\n\nFormato atual: ")
-  (if *JSJ_TAB_FORMAT*
-    (princ *JSJ_TAB_FORMAT*)
-    (princ "(nenhum definido)")
-  )
-  
-  (princ "\n\n--- FORMATO FIXO ---")
-  (princ "\n  [Num.Projeto]-EST-[DES_NUM]-PE-E[Num.Emissao]-[R]")
-  (princ "\n\n  Fixo: EST (especialidade), PE (fase), E (prefixo emissao)")
-  (princ "\n  Variavel: DES_NUM (numero desenho), R (revisao)")
-  
-  (princ "\n\n--- EXEMPLO ---")
-  (princ "\n  Numero Projeto: 779")
-  (princ "\n  Numero Emissao: 00")
-  (princ "\n  Resultado: 779-EST-001-PE-E00-A (com revisao A)")
-  (princ "\n             779-EST-001-PE-E00 (sem revisao)")
-  
-  (princ "\n\n-----------------------------------------")
-  (setq numProj (getstring T "\nNumero do Projeto (ex: 779): "))
-  
-  (if (and numProj (/= numProj ""))
-    (progn
-      (setq numEmissao (getstring T "\nNumero de Emissao (ex: 00): "))
-      
-      (if (and numEmissao (/= numEmissao ""))
-        (progn
-          ;; Constroi formato automaticamente
-          (setq userFormat (strcat "\"" numProj "\"" "-" "\"EST\"" "-" "(DES_NUM)" "-" "\"PE\"" "-" "\"E" numEmissao "\"" "-" "(R)"))
-          (setq *JSJ_TAB_FORMAT* userFormat)
-          (princ (strcat "\n\nFormato definido: " *JSJ_TAB_FORMAT*))
-          (princ "\n\nUse 'Aplicar Formato TAB' (opcao 6) para renomear todos os tabs.")
-          (WriteLog (strcat "FORMATO TAB: Definido como '" userFormat "'"))
-        )
-        (princ "\nCancelado - emissao vazia.")
-      )
-    )
-    (princ "\nCancelado - projeto vazio.")
-  )
-  (princ)
-)
-
-;; ============================================================================
-;; APLICAR FORMATO TAB (Nova funcionalidade V38)
-;; ============================================================================
-;; Renomeia todos os tabs de acordo com o formato definido
-(defun AplicarFormatoTab ( / doc count newTabName oldName)
-  (if (not *JSJ_TAB_FORMAT*)
-    (alert "Erro: Nenhum formato definido!\n\nUse primeiro 'Definir Formato TAB' (opcao 5).")
-    (progn
-      (princ "\n\n=== APLICAR FORMATO TAB ===")
-      (princ (strcat "\nFormato atual: " *JSJ_TAB_FORMAT*))
-      
-      (initget "Sim Nao")
-      (if (= (getkword "\n\nRenomear todos os tabs? [Sim/Nao] <Nao>: ") "Sim")
-        (progn
-          (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
-          (setq count 0)
-          
-          (princ "\nA processar...")
-          
-          (vlax-for lay (vla-get-Layouts doc)
-            (if (and (/= (vla-get-ModelType lay) :vlax-true)
-                     (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
-              (vlax-for blk (vla-get-Block lay)
-                (if (IsTargetBlock blk)
-                  (progn
-                    (setq newTabName (BuildTabName blk *JSJ_TAB_FORMAT* nil))
-                    (if (and newTabName (/= newTabName ""))
-                      (progn
-                        (setq oldName (vla-get-Name lay))
-                        (if (not (vl-catch-all-error-p 
-                                   (vl-catch-all-apply 'vla-put-Name (list lay newTabName))))
-                          (progn
-                            (setq count (1+ count))
-                            (princ (strcat "\n  " oldName " -> " newTabName))
-                          )
-                        )
-                      )
-                    )
-                  )
-                )
-              )
-            )
-          )
-          
-          (vla-Regen doc acActiveViewport)
-          (WriteLog (strcat "FORMATO TAB: Aplicado a " (itoa count) " layouts"))
-          (alert (strcat "Concluido!\n\n" (itoa count) " tabs renomeados."))
-        )
-        (princ "\nCancelado.")
-      )
-    )
-  )
-  (princ)
 )
 
 ;; ============================================================================
@@ -1879,79 +1543,62 @@
 )
 
 ;; ============================================================================
-;; MOTOR DE CONSTRUCAO DO NOME DO TAB
+;; MOTOR DE CONSTRUCAO DO NOME DO TAB - V41.0 (Formato Fixo)
 ;; ============================================================================
-;; Constrói o nome do tab baseado no formato e nos atributos do bloco
-;; Formato: "779"-"EST"-(DES_NUM)-"PEX"-(R)
-;; Se (R) estiver vazio, omite o sufixo -(R)
-(defun BuildTabName (blk formatStr revOverride / result i char inQuote inParen buffer attrName attrValue revValue)
-  (setq result ""
-        i 1
-        inQuote nil
-        inParen nil
-        buffer "")
+;; Formato FIXO: PROJ_NUM-EST-PFIX-DES_NUM-EMISSAO-R
+;; Exemplo: 779-EST-BA-01-E00-A (ou 779-EST-BA-01-E00 se R vazio)
+;; 
+;; Atributos utilizados:
+;;   PROJ_NUM - Número do projeto (ex: 779)
+;;   PFIX     - Prefixo do tipo de desenho (ex: BA, DIM)
+;;   DES_NUM  - Número do desenho (ex: 01, 02)
+;;   EMISSAO  - Código de emissão (ex: E00)
+;;   R        - Letra da revisão atual (ex: A, B, vazio)
+;; ============================================================================
+(defun BuildTabName (blk revOverride / projNum pfix desNum emissao revVal result)
+  ;; Obter valores dos atributos do bloco
+  (setq projNum (GetAttValue blk "PROJ_NUM"))
+  (setq pfix (GetAttValue blk "PFIX"))
+  (setq desNum (GetAttValue blk "DES_NUM"))
+  (setq emissao (GetAttValue blk "EMISSAO"))
   
-  ;; Parse do formato caractere por caractere
-  (while (<= i (strlen formatStr))
-    (setq char (substr formatStr i 1))
-    
-    (cond
-      ;; Inicio de texto fixo
-      ((and (= char "\"") (not inParen))
-        (if inQuote
-          (progn
-            ;; Fim de texto fixo - adiciona buffer ao resultado
-            (setq result (strcat result buffer))
-            (setq buffer "")
-            (setq inQuote nil)
-          )
-          ;; Inicio de texto fixo
-          (setq inQuote T)
-        )
-      )
-      
-      ;; Inicio de atributo
-      ((and (= char "(") (not inQuote))
-        (setq inParen T)
-      )
-      
-      ;; Fim de atributo
-      ((and (= char ")") (not inQuote))
-        (setq inParen nil)
-        (setq attrName buffer)
-        
-        ;; Se for o atributo R e temos revOverride, usar esse valor
-        (if (and (= (strcase attrName) "R") revOverride)
-          (setq attrValue revOverride)
-          (setq attrValue (GetAttValue blk attrName))
-        )
-        
-        ;; Regra especial: Se tag = R e valor vazio, ignora este segmento e o separador anterior
-        (if (and (= (strcase attrName) "R") (or (null attrValue) (= attrValue "") (= attrValue "-")))
-          (progn
-            ;; Remove ultimo separador "-" se existir
-            (if (= (substr result (strlen result) 1) "-")
-              (setq result (substr result 1 (1- (strlen result))))
-            )
-          )
-          ;; Caso normal: adiciona valor
-          (setq result (strcat result attrValue))
-        )
-        (setq buffer "")
-      )
-      
-      ;; Construir buffer (dentro de aspas ou parenteses)
-      ((or inQuote inParen)
-        (setq buffer (strcat buffer char))
-      )
-      
-      ;; Separadores ou outros caracteres fora de aspas/parenteses
-      (T
-        (setq result (strcat result char))
-      )
-    )
-    
-    (setq i (1+ i))
+  ;; Se revOverride fornecido, usar esse valor, senão ler do bloco
+  (if revOverride
+    (setq revVal revOverride)
+    (setq revVal (GetAttValue blk "R"))
+  )
+  
+  ;; Construir nome: PROJ_NUM-EST-PFIX-DES_NUM-EMISSAO[-R]
+  ;; EST é fixo para "Estabilidade"
+  (setq result "")
+  
+  ;; PROJ_NUM (se existir)
+  (if (and projNum (/= projNum ""))
+    (setq result projNum)
+  )
+  
+  ;; -EST (fixo)
+  (setq result (strcat result (if (/= result "") "-" "") "EST"))
+  
+  ;; -PFIX (se existir)
+  (if (and pfix (/= pfix ""))
+    (setq result (strcat result "-" pfix))
+  )
+  
+  ;; -DES_NUM (obrigatório)
+  (if (and desNum (/= desNum ""))
+    (setq result (strcat result "-" desNum))
+    (setq result (strcat result "-00"))  ;; Default se não existir
+  )
+  
+  ;; -EMISSAO (se existir)
+  (if (and emissao (/= emissao ""))
+    (setq result (strcat result "-" emissao))
+  )
+  
+  ;; -R (apenas se existir e não vazio)
+  (if (and revVal (/= revVal "") (/= revVal "-") (/= revVal " "))
+    (setq result (strcat result "-" revVal))
   )
   
   result
@@ -1960,52 +1607,101 @@
 ;; ============================================================================
 ;; ATUALIZAR NOME DE TAB DE UM BLOCO ESPECIFICO
 ;; ============================================================================
-;; Atualiza o nome do tab do layout onde está o bloco (apenas se formato definido)
+;; Atualiza o nome do tab do layout onde está o bloco
 ;; revOverride - valor opcional de R para usar (evita problemas de cache)
 (defun UpdateTabName (handle revOverride / doc lay blk foundLay foundBlk newTabName atts ename obj)
-  (if *JSJ_TAB_FORMAT*
+  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
+  
+  ;; Obter o bloco diretamente pelo handle (garante valores atualizados)
+  (if (not (vl-catch-all-error-p (vl-catch-all-apply 'handent (list handle))))
+    (setq ename (handent handle)))
+  (if ename
+    (setq obj (vlax-ename->vla-object ename)))
+  
+  (if (and obj (IsTargetBlock obj))
     (progn
-      (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
+      ;; Forçar refresh do bloco
+      (vla-Update obj)
       
-      ;; Obter o bloco diretamente pelo handle (garante valores atualizados)
-      (if (not (vl-catch-all-error-p (vl-catch-all-apply 'handent (list handle))))
-        (setq ename (handent handle)))
-      (if ename
-        (setq obj (vlax-ename->vla-object ename)))
-      
-      (if (and obj (IsTargetBlock obj))
-        (progn
-          ;; Forçar refresh do bloco
-          (vla-Update obj)
-          
-          ;; Agora procurar o layout onde está este bloco (para renomear)
-          (setq foundLay nil)
-          (vlax-for lay (vla-get-Layouts doc)
-            (if (and (not foundLay)
-                     (/= (vla-get-ModelType lay) :vlax-true)
-                     (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
-              (vlax-for blk (vla-get-Block lay)
-                (if (and (not foundLay) 
-                         (= (vla-get-Handle blk) handle))
-                  (setq foundLay lay)
-                )
-              )
+      ;; Agora procurar o layout onde está este bloco (para renomear)
+      (setq foundLay nil)
+      (vlax-for lay (vla-get-Layouts doc)
+        (if (and (not foundLay)
+                 (/= (vla-get-ModelType lay) :vlax-true)
+                 (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
+          (vlax-for blk (vla-get-Block lay)
+            (if (and (not foundLay) 
+                     (= (vla-get-Handle blk) handle))
+              (setq foundLay lay)
             )
           )
-          
-          ;; Se encontrou o layout, renomear usando o obj atualizado
-          (if foundLay
-            (progn
-              (setq newTabName (BuildTabName obj *JSJ_TAB_FORMAT* revOverride))
-              (if (and newTabName (/= newTabName ""))
-                (vl-catch-all-apply 'vla-put-Name (list foundLay newTabName))
-              )
-            )
+        )
+      )
+      
+      ;; Se encontrou o layout, renomear usando formato fixo
+      (if foundLay
+        (progn
+          (setq newTabName (BuildTabName obj revOverride))
+          (if (and newTabName (/= newTabName ""))
+            (vl-catch-all-apply 'vla-put-Name (list foundLay newTabName))
           )
         )
       )
     )
   )
+)
+
+;; ============================================================================
+;; ATUALIZAR NOMES DE TODOS OS LAYOUTS
+;; ============================================================================
+;; Percorre todos os layouts (exceto Model e TEMPLATE) e atualiza os nomes
+;; baseado no formato fixo: PROJ_NUM-EST-PFIX-DES_NUM-EMISSAO-R
+(defun AtualizarNomesLayouts ( / doc count newTabName oldName blk lay)
+  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
+  
+  (princ "\n\n=== ATUALIZAR NOMES DOS LAYOUTS ===")
+  (princ "\nFormato: PROJ_NUM-EST-PFIX-DES_NUM-EMISSAO-R")
+  (princ "\nExemplo: 779-EST-BA-01-E00-A")
+  
+  (initget "Sim Nao")
+  (if (= (getkword "\n\nRenomear todos os layouts? [Sim/Nao] <Nao>: ") "Sim")
+    (progn
+      (setq count 0)
+      (princ "\nA processar...")
+      
+      (vlax-for lay (vla-get-Layouts doc)
+        (if (and (/= (vla-get-ModelType lay) :vlax-true)
+                 (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
+          (vlax-for blk (vla-get-Block lay)
+            (if (IsTargetBlock blk)
+              (progn
+                (setq newTabName (BuildTabName blk nil))
+                (if (and newTabName (/= newTabName ""))
+                  (progn
+                    (setq oldName (vla-get-Name lay))
+                    (if (not (vl-catch-all-error-p 
+                               (vl-catch-all-apply 'vla-put-Name (list lay newTabName))))
+                      (progn
+                        (setq count (1+ count))
+                        (princ (strcat "\n  " oldName " -> " newTabName))
+                      )
+                      (princ (strcat "\n  [ERRO] " oldName))
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+      
+      (vla-Regen doc acActiveViewport)
+      (WriteLog (strcat "ATUALIZAR NOMES: " (itoa count) " layouts renomeados"))
+      (alert (strcat "Concluido!\n\n" (itoa count) " layouts renomeados."))
+    )
+    (princ "\nCancelado.")
+  )
+  (princ)
 )
 
 ;; ============================================================================
@@ -2590,11 +2286,10 @@
                            data projetou desNum tipo elemento titulo
                            revA dataA descA revB dataB descB revC dataC descC
                            revD dataD descD revE dataE descE
-                           countUpdates countNotFound ename obj handle foundBlock tabsSkipped)
+                           countUpdates countNotFound ename obj handle foundBlock)
   (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
   (setq path (getvar "DWGPREFIX"))
   (setq csvFile (getfiled "Selecione o CSV exportado da DB" path "csv" 4))
-  (setq tabsSkipped nil)
   
   (if (and csvFile (findfile csvFile))
     (progn
@@ -2744,11 +2439,8 @@
                     (vl-catch-all-apply 'UpdateAttributeR (list idCad))
                     (vl-catch-all-apply 'UpdateElementoTitulo (list idCad))
                     
-                    ;; Atualizar nome da TAB (só se formato estiver definido)
-                    (if *JSJ_TAB_FORMAT*
-                      (vl-catch-all-apply 'UpdateTabName (list idCad nil))
-                      (setq tabsSkipped T)
-                    )
+                    ;; Atualizar nome da TAB (formato fixo V41.0)
+                    (vl-catch-all-apply 'UpdateTabName (list idCad nil))
                     
                     (princ ".")
                     (setq countUpdates (1+ countUpdates))
@@ -2772,22 +2464,14 @@
           )
           
           ;; Mensagem de conclusão
-          (if tabsSkipped
-            (alert (strcat "Importação da DB concluída!\n\n"
-                          "Desenhos atualizados: " (itoa countUpdates) "\n"
-                          "ID_CAD não encontrados: " (itoa countNotFound) "\n\n"
-                          "AVISO: Nomes das TABs NÃO atualizados!\n"
-                          "Use 'Layouts → Definir Formato TAB' primeiro,\n"
-                          "depois 'Layouts → Aplicar Formato TAB'."))
-            (alert (strcat "Importação da DB concluída!\n\n"
-                          "Desenhos atualizados: " (itoa countUpdates) "\n"
-                          "ID_CAD não encontrados: " (itoa countNotFound) "\n\n"
-                          "Todos os campos atualizados:\n"
-                          "- Dados gerais (Cliente, Obra, etc.)\n"
-                          "- DES_NUM, TIPO, ELEMENTO, TITULO\n"
-                          "- Revisões A a E\n"
-                          "- Nomes das TABs"))
-          )
+          (alert (strcat "Importação da DB concluída!\n\n"
+                        "Desenhos atualizados: " (itoa countUpdates) "\n"
+                        "ID_CAD não encontrados: " (itoa countNotFound) "\n\n"
+                        "Todos os campos atualizados:\n"
+                        "- Dados gerais (Cliente, Obra, etc.)\n"
+                        "- DES_NUM, TIPO, ELEMENTO, TITULO\n"
+                        "- Revisões A a E\n"
+                        "- Nomes das TABs"))
         )
         (alert "Erro ao abrir ficheiro.")
       )
@@ -3042,10 +2726,12 @@
 ;; MENSAGEM DE CARREGAMENTO
 ;; ============================================================================
 (princ "\n========================================")
-(princ "\n GESTAO DESENHOS JSJ V40.1")
+(princ "\n GESTAO DESENHOS JSJ V41.0")
 (princ "\n========================================")
 (princ "\n Comandos disponiveis:")
 (princ "\n   GESTAODESENHOSJSJ - Menu principal")
 (princ "\n   JSJDIAG - Diagnostico de atributos")
+(princ "\n========================================")
+(princ "\n Formato Tab: PROJ_NUM-EST-PFIX-DES_NUM-EMISSAO-R")
 (princ "\n========================================")
 (princ)

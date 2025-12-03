@@ -1456,23 +1456,339 @@
     (textscr)
     (princ "\n\n   --- GERIR LAYOUTS ---")
     (princ "\n   1. Gerar Novos (TEMPLATE)")
-    (princ "\n   2. Ordenar Desenhos")
-    (princ "\n   3. Numerar Desenhos")
+    (princ "\n   2. Adicionar Desenho Intermedio")
+    (princ "\n   3. Ordenar Desenhos")
+    (princ "\n   4. Numerar Desenhos")
     (princ "\n   6. Atualizar Nomes Layouts")
     (princ "\n   7. Apagar Desenhos")
     (princ "\n   9. Navegar (ver desenho)")
     (princ "\n   0. Voltar")
-    (initget "1 2 3 6 7 9 0")
-    (setq optSub (getkword "\n   Opcao [1/2/3/6/7/9/0]: "))
+    (initget "1 2 3 4 6 7 9 0")
+    (setq optSub (getkword "\n   Opcao [1/2/3/4/6/7/9/0]: "))
     (cond
       ((= optSub "1") (GerarLayoutsTemplate))
-      ((= optSub "2") (OrdenarTabs))
-      ((= optSub "3") (NumerarDesenhos))
+      ((= optSub "2") (AdicionarDesenhoIntermedio))
+      ((= optSub "3") (OrdenarTabs))
+      ((= optSub "4") (NumerarDesenhos))
       ((= optSub "6") (AtualizarNomesLayouts))
       ((= optSub "7") (ApagarDesenhos))
       ((= optSub "9") (ModoNavegacao))
       ((= optSub "0") (setq loopSub nil))
       ((= optSub nil) (setq loopSub nil))))
+)
+
+;; Adicionar Desenho Intermédio
+(defun AdicionarDesenhoIntermedio ( / doc layouts modeOpt insertNum pfixList selectedPfix
+                                      layoutList blkPfix blkNum maxNum countRenumbered
+                                      layName paperSpace targetPfix i newHandle
+                                      ;; Dados do projeto (copiados do primeiro desenho)
+                                      projNum projNome cliente obra localizacao especialidade projetou
+                                      fase fasePfix emissao dataEmissao
+                                      ;; Novos dados pedidos ao user
+                                      newPfix newTipo newElemento newTitulo
+                                      ;; Ordenação
+                                      templateLay layObj valNum)
+  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
+  (setq layouts (vla-get-Layouts doc))
+  
+  ;; Verificar se TEMPLATE existe
+  (if (not (catch-apply 'vla-Item (list layouts "TEMPLATE")))
+    (progn (alert "ERRO: Layout 'TEMPLATE' não existe.") (exit)))
+  
+  ;; Recolher dados do projeto do primeiro desenho existente
+  (setq projNum nil)
+  (vlax-for lay layouts
+    (if (and (not projNum)
+             (/= (vla-get-ModelType lay) :vlax-true)
+             (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
+      (vlax-for blk (vla-get-Block lay)
+        (if (and (not projNum) (IsTargetBlock blk))
+          (progn
+            (setq projNum (GetAttValue blk "PROJ_NUM"))
+            (setq projNome (GetAttValue blk "PROJ_NOME"))
+            (setq cliente (GetAttValue blk "CLIENTE"))
+            (setq obra (GetAttValue blk "OBRA"))
+            (setq localizacao (GetAttValue blk "LOCALIZACAO"))
+            (setq especialidade (GetAttValue blk "ESPECIALIDADE"))
+            (setq projetou (GetAttValue blk "PROJETOU"))
+            (setq fase (GetAttValue blk "FASE"))
+            (setq fasePfix (GetAttValue blk "FASE_PFIX"))
+            (setq emissao (GetAttValue blk "EMISSAO"))
+            (setq dataEmissao (GetAttValue blk "DATA")))))))
+  
+  (princ "\n\n=== ADICIONAR DESENHO INTERMEDIO ===")
+  (princ "\n\n  [1] Numeracao Sequencial")
+  (princ "\n  [2] Numeracao por PFIX")
+  (princ "\n  [0] Cancelar")
+  
+  (initget "1 2 0")
+  (setq modeOpt (getkword "\n\nOpcao [1/2/0]: "))
+  
+  (cond
+    ;; Opção 1: Numeração Sequencial
+    ((= modeOpt "1")
+      (progn
+        ;; Mostrar desenhos atuais
+        (princ "\n\nDesenhos atuais:")
+        (setq maxNum 0)
+        (vlax-for lay layouts
+          (if (and (/= (vla-get-ModelType lay) :vlax-true)
+                   (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
+            (vlax-for blk (vla-get-Block lay)
+              (if (IsTargetBlock blk)
+                (progn
+                  (setq blkNum (atoi (GetAttValue blk "DES_NUM")))
+                  (if (> blkNum maxNum) (setq maxNum blkNum))
+                  (princ (strcat "\n  " (FormatNum blkNum))))))))
+        
+        (princ (strcat "\n\nMax atual: " (FormatNum maxNum)))
+        (setq insertNum (getint "\nNumero do desenho a INSERIR (ex: 3): "))
+        
+        (if (and insertNum (> insertNum 0) (<= insertNum (1+ maxNum)))
+          (progn
+            ;; 1. Renumerar desenhos >= insertNum (de trás para frente)
+            (princ "\nA renumerar desenhos existentes...")
+            (setq countRenumbered 0)
+            (setq i maxNum)
+            (while (>= i insertNum)
+              (vlax-for lay layouts
+                (if (and (/= (vla-get-ModelType lay) :vlax-true)
+                         (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
+                  (vlax-for blk (vla-get-Block lay)
+                    (if (IsTargetBlock blk)
+                      (if (= (atoi (GetAttValue blk "DES_NUM")) i)
+                        (progn
+                          (UpdateSingleTag (vla-get-Handle blk) "DES_NUM" (FormatNum (1+ i)))
+                          (UpdateTabName (vla-get-Handle blk))
+                          (setq countRenumbered (1+ countRenumbered))))))))
+              (setq i (1- i)))
+            
+            ;; 2. Pedir dados do novo desenho
+            (princ "\n\n--- DADOS DO NOVO DESENHO ---")
+            (setq newPfix (getstring T "\nPFIX (ex: DIM, ARM, FUN) [Enter=vazio]: "))
+            (setq newTipo (getstring T "\nTIPO: "))
+            (setq newElemento (getstring T "\nELEMENTO: "))
+            (setq newTitulo (getstring T "\nTITULO: "))
+            
+            ;; 3. Criar novo layout
+            (setq layName (strcat "Desenho_" (FormatNum insertNum)))
+            (princ (strcat "\nA criar " layName "..."))
+            (setvar "CMDECHO" 0)
+            (command "_.LAYOUT" "_Copy" "TEMPLATE" layName)
+            (setvar "CMDECHO" 1)
+            (setvar "CTAB" layName)
+            
+            ;; 4. Preencher atributos no novo layout
+            (setq paperSpace (vla-get-PaperSpace doc))
+            (vlax-for blk paperSpace
+              (if (IsTargetBlock blk)
+                (progn
+                  (setq newHandle (vla-get-Handle blk))
+                  ;; Dados do projeto (copiados)
+                  (if projNum (UpdateSingleTag newHandle "PROJ_NUM" projNum))
+                  (if projNome (UpdateSingleTag newHandle "PROJ_NOME" projNome))
+                  (if cliente (UpdateSingleTag newHandle "CLIENTE" cliente))
+                  (if obra (UpdateSingleTag newHandle "OBRA" obra))
+                  (if localizacao (UpdateSingleTag newHandle "LOCALIZACAO" localizacao))
+                  (if especialidade (UpdateSingleTag newHandle "ESPECIALIDADE" especialidade))
+                  (if projetou (UpdateSingleTag newHandle "PROJETOU" projetou))
+                  ;; Fase e Emissão (copiados)
+                  (if fase (UpdateSingleTag newHandle "FASE" fase))
+                  (if fasePfix (UpdateSingleTag newHandle "FASE_PFIX" fasePfix))
+                  (if emissao (UpdateSingleTag newHandle "EMISSAO" emissao))
+                  (if dataEmissao (UpdateSingleTag newHandle "DATA" dataEmissao))
+                  ;; DES_NUM
+                  (UpdateSingleTag newHandle "DES_NUM" (FormatNum insertNum))
+                  ;; Novos dados
+                  (if (/= newPfix "") (UpdateSingleTag newHandle "PFIX" newPfix))
+                  (if (/= newTipo "") (UpdateSingleTag newHandle "TIPO" newTipo))
+                  (if (/= newElemento "") (UpdateSingleTag newHandle "ELEMENTO" newElemento))
+                  (if (/= newTitulo "") (UpdateSingleTag newHandle "TITULO" newTitulo))
+                  ;; Atualizar nome do tab
+                  (UpdateTabName newHandle))))
+            
+            ;; 5. Ordenar por DES_NUM (sequencial)
+            (princ "\nA ordenar desenhos...")
+            (setq layoutList '())
+            (vlax-for lay layouts
+              (if (and (/= (vla-get-ModelType lay) :vlax-true)
+                       (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
+                (vlax-for blk (vla-get-Block lay)
+                  (if (IsTargetBlock blk)
+                    (setq layoutList (cons (list lay (atoi (GetAttValue blk "DES_NUM"))) layoutList))))))
+            (setq layoutList (vl-sort layoutList '(lambda (a b) (< (cadr a) (cadr b)))))
+            (if (not (vl-catch-all-error-p (setq templateLay (vla-Item layouts "TEMPLATE"))))
+              (vla-put-TabOrder templateLay 1))
+            (setq i 2)
+            (foreach item layoutList
+              (setq layObj (car item))
+              (vl-catch-all-apply 'vla-put-TabOrder (list layObj i))
+              (setq i (1+ i)))
+            
+            (vla-Regen doc acActiveViewport)
+            (WriteLog (strcat "INSERIR SEQ: Desenho " (FormatNum insertNum) " inserido, " (itoa countRenumbered) " renumerados"))
+            (alert (strcat "Sucesso!\n\nDesenho " (FormatNum insertNum) " inserido.\n" (itoa countRenumbered) " desenhos renumerados.\nLayouts ordenados.")))
+          (princ "\nNumero invalido."))))
+    
+    ;; Opção 2: Numeração por PFIX
+    ((= modeOpt "2")
+      (progn
+        ;; Recolher lista de PFIX existentes
+        (setq pfixList '())
+        (vlax-for lay layouts
+          (if (and (/= (vla-get-ModelType lay) :vlax-true)
+                   (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
+            (vlax-for blk (vla-get-Block lay)
+              (if (IsTargetBlock blk)
+                (progn
+                  (setq blkPfix (GetAttValue blk "PFIX"))
+                  (if (or (null blkPfix) (= blkPfix "") (= blkPfix " "))
+                    (setq blkPfix "_SEM_PFIX_"))
+                  (if (not (member blkPfix pfixList))
+                    (setq pfixList (append pfixList (list blkPfix)))))))))
+        
+        (if (null pfixList)
+          (alert "Nenhum PFIX encontrado!")
+          (progn
+            ;; Mostrar PFIX disponíveis
+            (princ "\n\nPrefixos disponiveis:")
+            (setq i 1)
+            (foreach pf pfixList
+              (princ (strcat "\n  " (itoa i) ". " pf))
+              (setq i (1+ i)))
+            
+            (setq i (getint "\nEscolha o PFIX (numero): "))
+            (if (and i (> i 0) (<= i (length pfixList)))
+              (progn
+                (setq selectedPfix (nth (1- i) pfixList))
+                (if (= selectedPfix "_SEM_PFIX_") (setq targetPfix "") (setq targetPfix selectedPfix))
+                
+                ;; Mostrar desenhos deste PFIX
+                (princ (strcat "\n\nDesenhos com PFIX=" selectedPfix ":"))
+                (setq maxNum 0)
+                (vlax-for lay layouts
+                  (if (and (/= (vla-get-ModelType lay) :vlax-true)
+                           (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
+                    (vlax-for blk (vla-get-Block lay)
+                      (if (IsTargetBlock blk)
+                        (progn
+                          (setq blkPfix (GetAttValue blk "PFIX"))
+                          (if (or (null blkPfix) (= blkPfix "") (= blkPfix " "))
+                            (setq blkPfix "_SEM_PFIX_"))
+                          (if (= blkPfix selectedPfix)
+                            (progn
+                              (setq blkNum (atoi (GetAttValue blk "DES_NUM")))
+                              (if (> blkNum maxNum) (setq maxNum blkNum))
+                              (princ (strcat "\n  " (FormatNum blkNum))))))))))
+                
+                (princ (strcat "\n\nMax atual em " selectedPfix ": " (FormatNum maxNum)))
+                (setq insertNum (getint "\nNumero do desenho a INSERIR: "))
+                
+                (if (and insertNum (> insertNum 0) (<= insertNum (1+ maxNum)))
+                  (progn
+                    ;; 1. Renumerar desenhos >= insertNum DENTRO deste PFIX (de trás para frente)
+                    (princ "\nA renumerar desenhos existentes...")
+                    (setq countRenumbered 0)
+                    (setq i maxNum)
+                    (while (>= i insertNum)
+                      (vlax-for lay layouts
+                        (if (and (/= (vla-get-ModelType lay) :vlax-true)
+                                 (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
+                          (vlax-for blk (vla-get-Block lay)
+                            (if (IsTargetBlock blk)
+                              (progn
+                                (setq blkPfix (GetAttValue blk "PFIX"))
+                                (if (or (null blkPfix) (= blkPfix "") (= blkPfix " "))
+                                  (setq blkPfix "_SEM_PFIX_"))
+                                (if (and (= blkPfix selectedPfix)
+                                         (= (atoi (GetAttValue blk "DES_NUM")) i))
+                                  (progn
+                                    (UpdateSingleTag (vla-get-Handle blk) "DES_NUM" (FormatNum (1+ i)))
+                                    (UpdateTabName (vla-get-Handle blk))
+                                    (setq countRenumbered (1+ countRenumbered)))))))))
+                      (setq i (1- i)))
+                    
+                    ;; 2. Pedir dados do novo desenho (PFIX já definido)
+                    (princ "\n\n--- DADOS DO NOVO DESENHO ---")
+                    (princ (strcat "\nPFIX: " targetPfix " (ja definido)"))
+                    (setq newTipo (getstring T "\nTIPO: "))
+                    (setq newElemento (getstring T "\nELEMENTO: "))
+                    (setq newTitulo (getstring T "\nTITULO: "))
+                    
+                    ;; 3. Criar novo layout
+                    (setq layName (strcat "Desenho_" selectedPfix "_" (FormatNum insertNum)))
+                    (princ (strcat "\nA criar " layName "..."))
+                    (setvar "CMDECHO" 0)
+                    (command "_.LAYOUT" "_Copy" "TEMPLATE" layName)
+                    (setvar "CMDECHO" 1)
+                    (setvar "CTAB" layName)
+                    
+                    ;; 4. Preencher atributos no novo layout
+                    (setq paperSpace (vla-get-PaperSpace doc))
+                    (vlax-for blk paperSpace
+                      (if (IsTargetBlock blk)
+                        (progn
+                          (setq newHandle (vla-get-Handle blk))
+                          ;; Dados do projeto (copiados)
+                          (if projNum (UpdateSingleTag newHandle "PROJ_NUM" projNum))
+                          (if projNome (UpdateSingleTag newHandle "PROJ_NOME" projNome))
+                          (if cliente (UpdateSingleTag newHandle "CLIENTE" cliente))
+                          (if obra (UpdateSingleTag newHandle "OBRA" obra))
+                          (if localizacao (UpdateSingleTag newHandle "LOCALIZACAO" localizacao))
+                          (if especialidade (UpdateSingleTag newHandle "ESPECIALIDADE" especialidade))
+                          (if projetou (UpdateSingleTag newHandle "PROJETOU" projetou))
+                          ;; Fase e Emissão (copiados)
+                          (if fase (UpdateSingleTag newHandle "FASE" fase))
+                          (if fasePfix (UpdateSingleTag newHandle "FASE_PFIX" fasePfix))
+                          (if emissao (UpdateSingleTag newHandle "EMISSAO" emissao))
+                          (if dataEmissao (UpdateSingleTag newHandle "DATA" dataEmissao))
+                          ;; DES_NUM e PFIX
+                          (UpdateSingleTag newHandle "DES_NUM" (FormatNum insertNum))
+                          (UpdateSingleTag newHandle "PFIX" targetPfix)
+                          ;; Novos dados
+                          (if (/= newTipo "") (UpdateSingleTag newHandle "TIPO" newTipo))
+                          (if (/= newElemento "") (UpdateSingleTag newHandle "ELEMENTO" newElemento))
+                          (if (/= newTitulo "") (UpdateSingleTag newHandle "TITULO" newTitulo))
+                          ;; Atualizar nome do tab
+                          (UpdateTabName newHandle))))
+                    
+                    ;; 5. Ordenar por PFIX (mantém ordem existente)
+                    (princ "\nA ordenar desenhos por PFIX...")
+                    (setq layoutList '())
+                    (vlax-for lay layouts
+                      (if (and (/= (vla-get-ModelType lay) :vlax-true)
+                               (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
+                        (vlax-for blk (vla-get-Block lay)
+                          (if (IsTargetBlock blk)
+                            (progn
+                              (setq blkPfix (GetAttValue blk "PFIX"))
+                              (setq valNum (atoi (GetAttValue blk "DES_NUM")))
+                              (if (or (null blkPfix) (= blkPfix "") (= blkPfix " "))
+                                (setq blkPfix "_SEM_PFIX_"))
+                              (setq layoutList (cons (list lay blkPfix valNum) layoutList)))))))
+                    ;; Ordenar: por posição do PFIX na lista, depois por DES_NUM
+                    (setq layoutList (vl-sort layoutList
+                      '(lambda (a b)
+                        (if (= (cadr a) (cadr b))
+                          (< (caddr a) (caddr b))
+                          (< (vl-position (cadr a) pfixList) (vl-position (cadr b) pfixList))))))
+                    (if (not (vl-catch-all-error-p (setq templateLay (vla-Item layouts "TEMPLATE"))))
+                      (vla-put-TabOrder templateLay 1))
+                    (setq i 2)
+                    (foreach item layoutList
+                      (setq layObj (car item))
+                      (vl-catch-all-apply 'vla-put-TabOrder (list layObj i))
+                      (setq i (1+ i)))
+                    
+                    (vla-Regen doc acActiveViewport)
+                    (WriteLog (strcat "INSERIR PFIX: " selectedPfix " " (FormatNum insertNum) " inserido, " (itoa countRenumbered) " renumerados"))
+                    (alert (strcat "Sucesso!\n\nDesenho " selectedPfix "-" (FormatNum insertNum) " inserido.\n" (itoa countRenumbered) " desenhos renumerados.\nLayouts ordenados por PFIX.")))
+                  (princ "\nNumero invalido.")))
+              (princ "\nOpcao invalida."))))))
+    
+    ;; Cancelar
+    (T (princ "\nCancelado.")))
+  (princ)
 )
 
 ;; Ordenar Desenhos

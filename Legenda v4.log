@@ -21,3 +21,10 @@
 [03-12-2025 04:34:54] [JSJ] TITULO: Des 01 alterado para 'PISO 1'
 [03-12-2025 04:35:36] [JSJ] TIPO: 'BETAO ARMADO' em 1 desenhos
 [03-12-2025 04:42:11] [JSJ] NUMERAR: 5 desenhos renumerados
+[03-12-2025 04:59:17] [JSJ] NUMERAR SEQ: 5 desenhos renumerados
+[03-12-2025 04:59:41] [JSJ] INSERIR SEQ: Desenho 003 inserido, 3 renumerados
+[03-12-2025 05:00:11] [JSJ] ORDENAR DES_NUM: 6 layouts reordenados
+[03-12-2025 05:07:28] [JSJ] APAGAR: Layout '-EST-003' eliminado
+[03-12-2025 05:08:16] [JSJ] INSERIR SEQ: Desenho 003 inserido, 3 renumerados
+[03-12-2025 05:08:27] [JSJ] NUMERAR SEQ: 6 desenhos renumerados
+[03-12-2025 05:08:59] [JSJ] GERAR LAYOUTS: Criados 2 layouts

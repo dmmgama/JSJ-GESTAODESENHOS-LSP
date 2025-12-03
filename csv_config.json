@@ -1,0 +1,27 @@
+{
+  "description": "Configuração para exportação CSV personalizada no LISP",
+  "columns": [
+    "DWG_SOURCE",
+    "PROJ_NUM",
+    "PFIX",
+    "DES_NUM",
+    "TIPO",
+    "ELEMENTO",
+    "TITULO",
+    "REVISAO",
+    "DATA_REV",
+    "DESC_REV",
+    "ID_CAD",
+    "LAYOUT"
+  ],
+  "separator": ";",
+  "includeHeader": true,
+  "available_columns": {
+    "note": "Lista de todas as colunas disponíveis para uso",
+    "project_data": ["PROJ_NUM", "PROJ_NOME", "CLIENTE", "OBRA", "LOCALIZACAO", "ESPECIALIDADE", "PROJETOU"],
+    "phase_emission": ["FASE", "FASE_PFIX", "EMISSAO", "DATA"],
+    "drawing_data": ["PFIX", "DES_NUM", "TIPO", "ELEMENTO", "TITULO", "ELEMENTO_TITULO"],
+    "revisions": ["REVISAO", "DATA_REV", "DESC_REV", "REV_A", "DATA_A", "DESC_A", "REV_B", "DATA_B", "DESC_B", "REV_C", "DATA_C", "DESC_C", "REV_D", "DATA_D", "DESC_D", "REV_E", "DATA_E", "DESC_E"],
+    "system": ["DWG_SOURCE", "ID_CAD", "LAYOUT", "R"]
+  }
+}

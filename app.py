@@ -602,22 +602,14 @@ else:
         'r': 'Revisão'
     }
     
-    # Detectar se DES_NUM tem prefixos de tipo ou elemento
-    def has_prefix_pattern(df):
-        """Verifica se os DES_NUM têm padrão de prefixo tipo/elemento"""
-        if 'des_num' not in df.columns:
-            return False
-        des_nums = df['des_num'].dropna().astype(str).tolist()
-        with_prefix = sum(1 for d in des_nums if d and d[0].isalpha())
-        return with_prefix > len(des_nums) * 0.3
-    
-    has_prefixes = has_prefix_pattern(filtered_df)
-    
     # Inicializar session_state para ordenação
+    # Por defeito: PFIX -> Elemento -> DES_NUM
     if 'sort_criteria_1' not in st.session_state:
-        st.session_state.sort_criteria_1 = 'tipo_display' if has_prefixes else 'des_num'
+        st.session_state.sort_criteria_1 = 'pfix'
     if 'sort_criteria_2' not in st.session_state:
         st.session_state.sort_criteria_2 = 'elemento_key'
+    if 'sort_criteria_3' not in st.session_state:
+        st.session_state.sort_criteria_3 = 'des_num'
     if 'sort_values_order_1' not in st.session_state:
         st.session_state.sort_values_order_1 = []
     if 'sort_values_order_2' not in st.session_state:
@@ -628,11 +620,7 @@ else:
         col_crit1, col_vals1 = st.columns([1, 2])
         
         with col_crit1:
-            if has_prefixes:
-                sort1_options = {k: v for k, v in sort_columns_available.items() if k != 'des_num'}
-                st.caption("⚠️ DES_NUM tem prefixos")
-            else:
-                sort1_options = sort_columns_available
+            sort1_options = sort_columns_available
             
             default_idx_1 = list(sort1_options.keys()).index(st.session_state.sort_criteria_1) if st.session_state.sort_criteria_1 in sort1_options else 0
             
@@ -710,6 +698,11 @@ else:
     if sort2_col:
         sort_by.append(sort2_col)
     
+    # Se não houver critérios seleccionados, usar ordenação por defeito
+    # PFIX -> Elemento -> DES_NUM
+    if not sort_by:
+        sort_by = ['pfix', 'elemento_key', 'des_num']
+    
     # Aplicar ordenação ao DataFrame
     def apply_custom_sort(df, sort_cols, order1, order2):
         """Aplica ordenação personalizada ao DataFrame"""
@@ -718,21 +711,29 @@ else:
         
         result_df = df.copy()
         
+        # Filtrar colunas que existem no DataFrame
+        valid_sort_cols = [col for col in sort_cols if col in result_df.columns]
+        
+        if not valid_sort_cols:
+            return df
+        
         # Aplicar ordenação em ordem inversa (último critério primeiro)
-        for i, col in enumerate(reversed(sort_cols)):
+        for i, col in enumerate(reversed(valid_sort_cols)):
             if col in result_df.columns:
-                if i == len(sort_cols) - 1 and order1:  # 1º critério
+                if i == len(valid_sort_cols) - 1 and order1:  # 1º critério
                     order_map = {v: idx for idx, v in enumerate(order1)}
                     result_df['_sort_key'] = result_df[col].map(lambda x: order_map.get(x, 999))
                     result_df = result_df.sort_values('_sort_key', kind='stable')
                     result_df = result_df.drop('_sort_key', axis=1)
-                elif i == len(sort_cols) - 2 and order2:  # 2º critério
+                elif i == len(valid_sort_cols) - 2 and order2:  # 2º critério
                     order_map = {v: idx for idx, v in enumerate(order2)}
                     result_df['_sort_key'] = result_df[col].map(lambda x: order_map.get(x, 999))
                     result_df = result_df.sort_values('_sort_key', kind='stable')
                     result_df = result_df.drop('_sort_key', axis=1)
                 else:
                     result_df = result_df.sort_values(col, kind='stable')
+        
+        return result_df
         
         return result_df
     
@@ -944,12 +945,16 @@ else:
         # Edit mode with data_editor
         st.info("📝 **Modo Edição Ativo** - Edite os campos diretamente na tabela. O campo Estado é editável (interno, não vai para CSV).")
         
-        # Use the same columns as view mode, but ensure we have id and layout_name for updates
+        # Use the same columns as view mode, but ensure we have id, layout_name, and estado_interno for updates
         edit_view_cols = view_cols.copy()
         
         # Ensure layout_name is in columns (needed for updates)
         if 'layout_name' not in edit_view_cols:
             edit_view_cols.insert(0, 'layout_name')
+        
+        # Ensure estado_interno is in columns (always editable)
+        if 'estado_interno' not in edit_view_cols:
+            edit_view_cols.append('estado_interno')
         
         # Ensure id is available for estado updates
         if 'id' not in edit_view_cols:

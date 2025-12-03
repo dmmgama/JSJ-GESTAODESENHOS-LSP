@@ -1121,19 +1121,19 @@
         (progn
           (setq layName (vla-get-Name lay))
           (setq row (list
-            layName
             (CleanCSV (GetAttValue blk "PROJ_NUM"))
             (CleanCSV (GetAttValue blk "PROJ_NOME"))
             (CleanCSV (GetAttValue blk "CLIENTE"))
             (CleanCSV (GetAttValue blk "OBRA"))
             (CleanCSV (GetAttValue blk "LOCALIZACAO"))
             (CleanCSV (GetAttValue blk "ESPECIALIDADE"))
+            (CleanCSV (GetAttValue blk "PROJETOU"))
             (CleanCSV (GetAttValue blk "FASE"))
             (CleanCSV (GetAttValue blk "FASE_PFIX"))
             (CleanCSV (GetAttValue blk "EMISSAO"))
             (CleanCSV (GetAttValue blk "DATA"))
-            (CleanCSV (GetAttValue blk "PROJETOU"))
             (CleanCSV (GetAttValue blk "PFIX"))
+            layName
             (CleanCSV (GetAttValue blk "DES_NUM"))
             (CleanCSV (GetAttValue blk "TIPO"))
             (CleanCSV (GetAttValue blk "ELEMENTO"))
@@ -1157,6 +1157,7 @@
             (vla-get-Handle blk)))
           (setq dataList (cons row dataList))))))
   
+  ;; Ordenar por DES_NUM (agora está na posição 13, index 13)
   (setq dataList (vl-sort dataList '(lambda (a b) (< (atoi (nth 13 a)) (atoi (nth 13 b))))))
   
   (setq csvFile (getfiled "Guardar Lista CSV Completa" (strcat path dwgName "_ListaCompleta.csv") "csv" 1))
@@ -1165,7 +1166,7 @@
       (setq fileDes (open csvFile "w"))
       (if fileDes
         (progn
-          (write-line "LAYOUT;PROJ_NUM;PROJ_NOME;CLIENTE;OBRA;LOCALIZACAO;ESPECIALIDADE;FASE;FASE_PFIX;EMISSAO;DATA;PROJETOU;PFIX;DES_NUM;TIPO;ELEMENTO;TITULO;REV_A;DATA_A;DESC_A;REV_B;DATA_B;DESC_B;REV_C;DATA_C;DESC_C;REV_D;DATA_D;DESC_D;REV_E;DATA_E;DESC_E;DWG_SOURCE;ID_CAD" fileDes)
+          (write-line "PROJ_NUM;PROJ_NOME;CLIENTE;OBRA;LOCALIZACAO;ESPECIALIDADE;PROJETOU;FASE;FASE_PFIX;EMISSAO;DATA;PFIX;LAYOUT;DES_NUM;TIPO;ELEMENTO;TITULO;REV_A;DATA_A;DESC_A;REV_B;DATA_B;DESC_B;REV_C;DATA_C;DESC_C;REV_D;DATA_D;DESC_D;REV_E;DATA_E;DESC_E;DWG_SOURCE;ID_CAD" fileDes)
           (foreach row dataList
             (write-line (apply 'strcat (mapcar '(lambda (x) (strcat x ";")) row)) fileDes))
           (close fileDes)

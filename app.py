@@ -1150,39 +1150,46 @@ else:
             if not desenhos_full:
                 st.warning("⚠️ Nenhum desenho encontrado para exportar")
             else:
-                # Converter para DataFrame com todos os 29 campos na ordem exata da LSP
+                # Converter para DataFrame com todos os 34 campos na ordem exata da LSP V41
                 export_data = []
                 for d in desenhos_full:
                     export_data.append({
-                        'TAG DO LAYOUT': d.get('layout_name', ''),
+                        # Campos na ordem da LSP V41
+                        'PROJ_NUM': d.get('proj_num', ''),
+                        'PROJ_NOME': d.get('proj_nome', ''),
                         'CLIENTE': d.get('cliente', ''),
                         'OBRA': d.get('obra', ''),
                         'LOCALIZACAO': d.get('localizacao', ''),
                         'ESPECIALIDADE': d.get('especialidade', ''),
-                        'FASE': d.get('fase', ''),
-                        'DATA 1ª EMISSÃO': d.get('data', ''),
                         'PROJETOU': d.get('projetou', ''),
-                        'NUMERO DE DESENHO': d.get('des_num', ''),
+                        'FASE': d.get('fase', ''),
+                        'FASE_PFIX': d.get('fase_pfix', ''),
+                        'EMISSAO': d.get('emissao', ''),
+                        'DATA': d.get('data', ''),
+                        'PFIX': d.get('pfix', ''),
+                        'LAYOUT': d.get('layout_name', ''),
+                        'DES_NUM': d.get('des_num', ''),
                         'TIPO': d.get('tipo_display', ''),
-                        'ELEMENTO': d.get('elemento_key', ''),
+                        'ELEMENTO': d.get('elemento', ''),
                         'TITULO': d.get('titulo', ''),
-                        'REVISÃO A': d.get('rev_a', ''),
-                        'DATA REVISAO A': d.get('data_a', ''),
-                        'DESCRIÇÃO REVISÃO A': d.get('desc_a', ''),
-                        'REVISÃO B': d.get('rev_b', ''),
-                        'DATA REVISAO B': d.get('data_b', ''),
-                        'DESCRIÇÃO REVISÃO B': d.get('desc_b', ''),
-                        'REVISÃO C': d.get('rev_c', ''),
-                        'DATA REVISAO C': d.get('data_c', ''),
-                        'DESCRIÇÃO REVISÃO C': d.get('desc_c', ''),
-                        'REVISÃO D': d.get('rev_d', ''),
-                        'DATA REVISAO D': d.get('data_d', ''),
-                        'DESCRIÇÃO REVISÃO D': d.get('desc_d', ''),
-                        'REVISÃO E': d.get('rev_e', ''),
-                        'DATA REVISAO E': d.get('data_e', ''),
-                        'DESCRIÇÃO REVISÃO E': d.get('desc_e', ''),
-                        'NOME DWG': d.get('dwg_name', ''),
+                        'REV_A': d.get('rev_a', ''),
+                        'DATA_A': d.get('data_a', ''),
+                        'DESC_A': d.get('desc_a', ''),
+                        'REV_B': d.get('rev_b', ''),
+                        'DATA_B': d.get('data_b', ''),
+                        'DESC_B': d.get('desc_b', ''),
+                        'REV_C': d.get('rev_c', ''),
+                        'DATA_C': d.get('data_c', ''),
+                        'DESC_C': d.get('desc_c', ''),
+                        'REV_D': d.get('rev_d', ''),
+                        'DATA_D': d.get('data_d', ''),
+                        'DESC_D': d.get('desc_d', ''),
+                        'REV_E': d.get('rev_e', ''),
+                        'DATA_E': d.get('data_e', ''),
+                        'DESC_E': d.get('desc_e', ''),
+                        'DWG_SOURCE': d.get('dwg_name', ''),
                         'ID_CAD': d.get('id_cad', ''),
+                        # Colunas internas para ordenação
                         '_tipo_display': d.get('tipo_display', ''),
                         '_elemento_key': d.get('elemento_key', ''),
                         '_des_num': d.get('des_num', ''),
@@ -1196,8 +1203,8 @@ else:
                         'tipo_display': '_tipo_display',
                         'elemento_key': '_elemento_key',
                         'des_num': '_des_num',
-                        'layout_name': 'TAG DO LAYOUT',
-                        'r': 'REVISÃO A'
+                        'layout_name': 'LAYOUT',
+                        'r': 'REV_A'
                     }
                     
                     for i, col in enumerate(reversed(sort_by)):

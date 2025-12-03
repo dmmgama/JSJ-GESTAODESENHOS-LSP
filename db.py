@@ -29,13 +29,18 @@ def criar_tabelas(conn):
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             layout_name TEXT NOT NULL,
             dwg_name TEXT NOT NULL,
+            proj_num TEXT,
+            proj_nome TEXT,
             cliente TEXT,
             obra TEXT,
             localizacao TEXT,
             especialidade TEXT,
             fase TEXT,
+            fase_pfix TEXT,
+            emissao TEXT,
             projetou TEXT,
             escalas TEXT,
+            pfix TEXT,
             tipo_display TEXT,
             tipo_key TEXT,
             elemento TEXT,
@@ -47,6 +52,7 @@ def criar_tabelas(conn):
             r_data TEXT,
             r_desc TEXT,
             data TEXT,
+            id_cad TEXT,
             raw_attributes TEXT,
             estado_interno TEXT DEFAULT 'projeto',
             comentario TEXT,
@@ -59,39 +65,27 @@ def criar_tabelas(conn):
     """)
     
     # Add new columns if they don't exist (for migration)
-    try:
-        cursor.execute("ALTER TABLE desenhos ADD COLUMN elemento TEXT")
-    except:
-        pass
-    try:
-        cursor.execute("ALTER TABLE desenhos ADD COLUMN titulo TEXT")
-    except:
-        pass
-    try:
-        cursor.execute("ALTER TABLE desenhos ADD COLUMN r_data TEXT")
-    except:
-        pass
-    try:
-        cursor.execute("ALTER TABLE desenhos ADD COLUMN r_desc TEXT")
-    except:
-        pass
-    # New internal state fields (migration)
-    try:
-        cursor.execute("ALTER TABLE desenhos ADD COLUMN estado_interno TEXT DEFAULT 'projeto'")
-    except:
-        pass
-    try:
-        cursor.execute("ALTER TABLE desenhos ADD COLUMN comentario TEXT")
-    except:
-        pass
-    try:
-        cursor.execute("ALTER TABLE desenhos ADD COLUMN data_limite TEXT")
-    except:
-        pass
-    try:
-        cursor.execute("ALTER TABLE desenhos ADD COLUMN responsavel TEXT")
-    except:
-        pass
+    new_columns = [
+        ("proj_num", "TEXT"),
+        ("proj_nome", "TEXT"),
+        ("fase_pfix", "TEXT"),
+        ("emissao", "TEXT"),
+        ("pfix", "TEXT"),
+        ("id_cad", "TEXT"),
+        ("elemento", "TEXT"),
+        ("titulo", "TEXT"),
+        ("r_data", "TEXT"),
+        ("r_desc", "TEXT"),
+        ("estado_interno", "TEXT DEFAULT 'projeto'"),
+        ("comentario", "TEXT"),
+        ("data_limite", "TEXT"),
+        ("responsavel", "TEXT"),
+    ]
+    for col_name, col_type in new_columns:
+        try:
+            cursor.execute(f"ALTER TABLE desenhos ADD COLUMN {col_name} {col_type}")
+        except:
+            pass
     
     # Table: revisoes
     cursor.execute("""
@@ -165,13 +159,18 @@ def upsert_desenho(conn, desenho_data: Dict[str, Any]) -> int:
         cursor.execute("""
             UPDATE desenhos SET
                 dwg_name = ?,
+                proj_num = ?,
+                proj_nome = ?,
                 cliente = ?,
                 obra = ?,
                 localizacao = ?,
                 especialidade = ?,
                 fase = ?,
+                fase_pfix = ?,
+                emissao = ?,
                 projetou = ?,
                 escalas = ?,
+                pfix = ?,
                 tipo_display = ?,
                 tipo_key = ?,
                 elemento = ?,
@@ -183,18 +182,24 @@ def upsert_desenho(conn, desenho_data: Dict[str, Any]) -> int:
                 r_data = ?,
                 r_desc = ?,
                 data = ?,
+                id_cad = ?,
                 raw_attributes = ?,
                 updated_at = ?
             WHERE id = ?
         """, (
             desenho_data.get('dwg_name', ''),
+            desenho_data.get('proj_num', ''),
+            desenho_data.get('proj_nome', ''),
             desenho_data.get('cliente', ''),
             desenho_data.get('obra', ''),
             desenho_data.get('localizacao', ''),
             desenho_data.get('especialidade', ''),
             desenho_data.get('fase', ''),
+            desenho_data.get('fase_pfix', ''),
+            desenho_data.get('emissao', ''),
             desenho_data.get('projetou', ''),
             desenho_data.get('escalas', ''),
+            desenho_data.get('pfix', ''),
             desenho_data.get('tipo_display', ''),
             desenho_data.get('tipo_key', ''),
             desenho_data.get('elemento', ''),
@@ -206,6 +211,7 @@ def upsert_desenho(conn, desenho_data: Dict[str, Any]) -> int:
             desenho_data.get('r_data', ''),
             desenho_data.get('r_desc', ''),
             desenho_data.get('data', ''),
+            desenho_data.get('id_cad', ''),
             desenho_data.get('raw_attributes', ''),
             datetime.now().isoformat(),
             desenho_id
@@ -214,21 +220,26 @@ def upsert_desenho(conn, desenho_data: Dict[str, Any]) -> int:
         # INSERT
         cursor.execute("""
             INSERT INTO desenhos (
-                layout_name, dwg_name, cliente, obra, localizacao,
-                especialidade, fase, projetou, escalas, tipo_display,
+                layout_name, dwg_name, proj_num, proj_nome, cliente, obra, localizacao,
+                especialidade, fase, fase_pfix, emissao, projetou, escalas, pfix, tipo_display,
                 tipo_key, elemento, titulo, elemento_titulo, elemento_key, des_num,
-                r, r_data, r_desc, data, raw_attributes, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                r, r_data, r_desc, data, id_cad, raw_attributes, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             desenho_data['layout_name'],
             desenho_data.get('dwg_name', ''),
+            desenho_data.get('proj_num', ''),
+            desenho_data.get('proj_nome', ''),
             desenho_data.get('cliente', ''),
             desenho_data.get('obra', ''),
             desenho_data.get('localizacao', ''),
             desenho_data.get('especialidade', ''),
             desenho_data.get('fase', ''),
+            desenho_data.get('fase_pfix', ''),
+            desenho_data.get('emissao', ''),
             desenho_data.get('projetou', ''),
             desenho_data.get('escalas', ''),
+            desenho_data.get('pfix', ''),
             desenho_data.get('tipo_display', ''),
             desenho_data.get('tipo_key', ''),
             desenho_data.get('elemento', ''),
@@ -240,6 +251,7 @@ def upsert_desenho(conn, desenho_data: Dict[str, Any]) -> int:
             desenho_data.get('r_data', ''),
             desenho_data.get('r_desc', ''),
             desenho_data.get('data', ''),
+            desenho_data.get('id_cad', ''),
             desenho_data.get('raw_attributes', ''),
             datetime.now().isoformat(),
             datetime.now().isoformat()

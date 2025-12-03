@@ -153,6 +153,36 @@
   found
 )
 
+;; Converte data DD.MM.YYYY ou DD/MM/YYYY para número YYYYMMDD para ordenação
+(defun DateToSortable (dateStr / parts sep day month year)
+  (if (or (null dateStr) (= dateStr "") (= dateStr " "))
+    0
+    (progn
+      ;; Detectar separador (. ou / ou -)
+      (cond
+        ((vl-string-search "." dateStr) (setq sep "."))
+        ((vl-string-search "/" dateStr) (setq sep "/"))
+        ((vl-string-search "-" dateStr) (setq sep "-"))
+        (T (setq sep ".")))
+      (setq parts (StrSplit dateStr sep))
+      (if (>= (length parts) 3)
+        (progn
+          ;; Verificar se é YYYY.MM.DD ou DD.MM.YYYY
+          (if (> (strlen (car parts)) 2)
+            ;; Formato YYYY.MM.DD
+            (progn
+              (setq year (atoi (car parts)))
+              (setq month (atoi (cadr parts)))
+              (setq day (atoi (caddr parts))))
+            ;; Formato DD.MM.YYYY
+            (progn
+              (setq day (atoi (car parts)))
+              (setq month (atoi (cadr parts)))
+              (setq year (atoi (caddr parts)))))
+          ;; Retornar YYYYMMDD como número
+          (+ (* year 10000) (* month 100) day))
+        0))))
+
 ;; ============================================================================
 ;; SECÇÃO 3: FUNÇÕES DE DADOS
 ;; ============================================================================
@@ -464,13 +494,14 @@
     (princ "\n 3. Importar Lista de Desenhos")
     (princ "\n 4. Dados do Projeto")
     (princ "\n 5. Gerir Layouts")
+    (princ "\n 6. Gerar Historico de Revisoes")
     (princ "\n----------------------------------------------")
     (princ "\n 9. Navegar (ver desenho)")
     (princ "\n 0. Sair")
     (princ "\n==============================================")
     
-    (initget "1 2 3 4 5 9 0")
-    (setq opt (getkword "\nEscolha uma opcao [1/2/3/4/5/9/0]: "))
+    (initget "1 2 3 4 5 6 9 0")
+    (setq opt (getkword "\nEscolha uma opcao [1/2/3/4/5/6/9/0]: "))
     
     (cond
       ((= opt "1") (Menu_ModificarLegendas))
@@ -478,6 +509,7 @@
       ((= opt "3") (Menu_Importar))
       ((= opt "4") (Menu_DadosProjeto))
       ((= opt "5") (Menu_GerirLayouts))
+      ((= opt "6") (GerarHistoricoRevisoes))
       ((= opt "9") (ModoNavegacao))
       ((= opt "0") (setq loop nil))
       ((= opt nil) (setq loop nil))))
@@ -1272,6 +1304,201 @@
                                 "\nColunas: " (itoa (length columns)))))
                 (alert "Erro ao criar ficheiro.")))
             (princ "\nCancelado."))))))
+  (princ)
+)
+
+;; ============================================================================
+;; SECÇÃO 10B: GERAR HISTÓRICO DE REVISÕES (MD)
+;; ============================================================================
+
+;; Gerar ficheiro Markdown com histórico de revisões
+(defun GerarHistoricoRevisoes ( / doc path dwgName mdFile fileDes layouts
+                                  projNum projNome cliente obra localizacao especialidade projetou
+                                  dataEmissao emissao
+                                  revDataList allDates uniqueDates sortedDates
+                                  tabName desNum pfix revA dataA descA revB dataB descB
+                                  revC dataC descC revD dataD descD revE dataE descE
+                                  currentDate dateEntries entry)
+  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
+  (setq path (getvar "DWGPREFIX"))
+  (setq dwgName (GetDWGName))
+  (setq layouts (vla-get-Layouts doc))
+  
+  (princ "\nA recolher dados do projeto...")
+  
+  ;; 1. Recolher dados do projeto do primeiro desenho
+  (setq projNum nil)
+  (vlax-for lay layouts
+    (if (and (not projNum)
+             (/= (vla-get-ModelType lay) :vlax-true)
+             (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
+      (vlax-for blk (vla-get-Block lay)
+        (if (and (not projNum) (IsTargetBlock blk))
+          (progn
+            (setq projNum (GetAttValue blk "PROJ_NUM"))
+            (setq projNome (GetAttValue blk "PROJ_NOME"))
+            (setq cliente (GetAttValue blk "CLIENTE"))
+            (setq obra (GetAttValue blk "OBRA"))
+            (setq localizacao (GetAttValue blk "LOCALIZACAO"))
+            (setq especialidade (GetAttValue blk "ESPECIALIDADE"))
+            (setq projetou (GetAttValue blk "PROJETOU"))
+            (setq dataEmissao (GetAttValue blk "DATA"))
+            (setq emissao (GetAttValue blk "EMISSAO")))))))
+  
+  (if (not projNum)
+    (progn (alert "Nenhum desenho encontrado com bloco LEGENDA_JSJ_V1.") (exit)))
+  
+  (princ "\nA recolher historico de revisoes...")
+  
+  ;; 2. Recolher todas as revisões de todos os layouts
+  ;; Lista: ((data tabName revLetra descricao) ...)
+  (setq revDataList '())
+  
+  (vlax-for lay layouts
+    (if (and (/= (vla-get-ModelType lay) :vlax-true)
+             (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
+      (vlax-for blk (vla-get-Block lay)
+        (if (IsTargetBlock blk)
+          (progn
+            (setq tabName (vla-get-Name lay))
+            (setq desNum (GetAttValue blk "DES_NUM"))
+            (setq pfix (GetAttValue blk "PFIX"))
+            
+            ;; Revisão A
+            (setq revA (GetAttValue blk "REV_A"))
+            (setq dataA (GetAttValue blk "DATA_A"))
+            (setq descA (GetAttValue blk "DESC_A"))
+            (if (and dataA (/= dataA "") (/= dataA " "))
+              (setq revDataList (cons (list dataA tabName "A" descA desNum pfix) revDataList)))
+            
+            ;; Revisão B
+            (setq revB (GetAttValue blk "REV_B"))
+            (setq dataB (GetAttValue blk "DATA_B"))
+            (setq descB (GetAttValue blk "DESC_B"))
+            (if (and dataB (/= dataB "") (/= dataB " "))
+              (setq revDataList (cons (list dataB tabName "B" descB desNum pfix) revDataList)))
+            
+            ;; Revisão C
+            (setq revC (GetAttValue blk "REV_C"))
+            (setq dataC (GetAttValue blk "DATA_C"))
+            (setq descC (GetAttValue blk "DESC_C"))
+            (if (and dataC (/= dataC "") (/= dataC " "))
+              (setq revDataList (cons (list dataC tabName "C" descC desNum pfix) revDataList)))
+            
+            ;; Revisão D
+            (setq revD (GetAttValue blk "REV_D"))
+            (setq dataD (GetAttValue blk "DATA_D"))
+            (setq descD (GetAttValue blk "DESC_D"))
+            (if (and dataD (/= dataD "") (/= dataD " "))
+              (setq revDataList (cons (list dataD tabName "D" descD desNum pfix) revDataList)))
+            
+            ;; Revisão E
+            (setq revE (GetAttValue blk "REV_E"))
+            (setq dataE (GetAttValue blk "DATA_E"))
+            (setq descE (GetAttValue blk "DESC_E"))
+            (if (and dataE (/= dataE "") (/= dataE " "))
+              (setq revDataList (cons (list dataE tabName "E" descE desNum pfix) revDataList))))))))
+  
+  ;; 3. Extrair datas únicas e ordenar
+  (setq allDates (mapcar 'car revDataList))
+  (setq uniqueDates '())
+  (foreach dt allDates
+    (if (not (member dt uniqueDates))
+      (setq uniqueDates (cons dt uniqueDates))))
+  
+  ;; Ordenar datas - converter DD.MM.YYYY para YYYYMMDD para comparação numérica
+  (setq sortedDates (vl-sort uniqueDates 
+    '(lambda (a b)
+      (< (DateToSortable a) (DateToSortable b)))))
+  
+  ;; 4. Criar ficheiro MD
+  (setq mdFile (strcat path dwgName " - Historico de Revisoes.md"))
+  (setq fileDes (open mdFile "w"))
+  
+  (if fileDes
+    (progn
+      ;; Cabeçalho
+      (write-line (strcat "# Historico de Revisoes - " dwgName) fileDes)
+      (write-line "" fileDes)
+      
+      ;; Tabela de dados do projeto
+      (write-line "## Dados do Projeto" fileDes)
+      (write-line "" fileDes)
+      (write-line "| Campo | Valor |" fileDes)
+      (write-line "|-------|-------|" fileDes)
+      (write-line (strcat "| Projeto | " (if projNum projNum "-") " |") fileDes)
+      (write-line (strcat "| Nome | " (if projNome projNome "-") " |") fileDes)
+      (write-line (strcat "| Cliente | " (if cliente cliente "-") " |") fileDes)
+      (write-line (strcat "| Obra | " (if obra obra "-") " |") fileDes)
+      (write-line (strcat "| Localizacao | " (if localizacao localizacao "-") " |") fileDes)
+      (write-line (strcat "| Especialidade | " (if especialidade especialidade "-") " |") fileDes)
+      (write-line (strcat "| Projetou | " (if projetou projetou "-") " |") fileDes)
+      (write-line "" fileDes)
+      
+      ;; Separador
+      (write-line "---" fileDes)
+      (write-line "" fileDes)
+      (write-line "Este e o historico de revisoes deste ficheiro." fileDes)
+      (write-line "" fileDes)
+      (write-line "---" fileDes)
+      (write-line "" fileDes)
+      
+      ;; Emissão Inicial
+      (write-line (strcat "## Emissao Inicial - " (if dataEmissao dataEmissao "N/A")) fileDes)
+      (write-line "" fileDes)
+      (write-line (strcat "Primeira emissao do projeto (" (if emissao emissao "E01") ").") fileDes)
+      (write-line "" fileDes)
+      
+      ;; Alterações por data
+      (foreach currentDate sortedDates
+        (progn
+          (write-line "---" fileDes)
+          (write-line "" fileDes)
+          (write-line (strcat "## Alteracoes a " currentDate) fileDes)
+          (write-line "" fileDes)
+          
+          ;; Filtrar entradas desta data
+          (setq dateEntries '())
+          (foreach entry revDataList
+            (if (= (car entry) currentDate)
+              (setq dateEntries (cons entry dateEntries))))
+          
+          ;; Ordenar por PFIX primeiro, depois por DES_NUM
+          ;; entry format: (data tabName revLetra descricao desNum pfix)
+          (setq dateEntries (vl-sort dateEntries 
+            '(lambda (a b)
+              (if (= (nth 5 a) (nth 5 b))
+                ;; Mesmo PFIX - ordenar por DES_NUM
+                (< (atoi (nth 4 a)) (atoi (nth 4 b)))
+                ;; PFIX diferente - ordenar alfabeticamente (vazio primeiro)
+                (< (if (or (null (nth 5 a)) (= (nth 5 a) "") (= (nth 5 a) " ")) "   " (nth 5 a))
+                   (if (or (null (nth 5 b)) (= (nth 5 b) "") (= (nth 5 b) " ")) "   " (nth 5 b)))))))
+          
+          ;; Escrever entradas agrupadas por PFIX
+          (setq lastPfix nil)
+          (foreach entry dateEntries
+            (progn
+              (setq currentPfix (nth 5 entry))
+              (if (or (null currentPfix) (= currentPfix "") (= currentPfix " "))
+                (setq currentPfix "_SEM_PFIX_"))
+              ;; Se mudou de PFIX, adicionar linha em branco
+              (if (and lastPfix (/= lastPfix currentPfix))
+                (write-line "" fileDes))
+              (setq lastPfix currentPfix)
+              ;; Escrever linha
+              (write-line (strcat "- **" (nth 1 entry) "** - Revisao " (nth 2 entry) 
+                                 (if (and (nth 3 entry) (/= (nth 3 entry) "") (/= (nth 3 entry) " "))
+                                   (strcat ": " (nth 3 entry))
+                                   "")) fileDes)))
+          (write-line "" fileDes)))
+      
+      (close fileDes)
+      (WriteLog (strcat "HISTORICO MD: " (itoa (length revDataList)) " revisoes, " (itoa (length sortedDates)) " datas"))
+      (alert (strcat "Historico de Revisoes gerado!\n\nFicheiro: " mdFile 
+                    "\n\nRevisoes registadas: " (itoa (length revDataList))
+                    "\nDatas diferentes: " (itoa (length sortedDates)))))
+    (alert "Erro ao criar ficheiro."))
+  
   (princ)
 )
 

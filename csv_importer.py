@@ -1,6 +1,6 @@
 """
 CSV importer - reads CSV files from data/csv_in/ and imports to database.
-Supports the 29-field "Todos os Campos" export from AutoLISP.
+Supports the 34-field "Todos os Campos" export from AutoLISP V41.
 """
 import csv
 import os
@@ -12,64 +12,81 @@ from utils import normalize_tipo_display_to_key, normalize_elemento_to_key
 
 
 # Mapeamento de headers CSV para campos internos
+# Suporta formato da LSP V41: PROJ_NUM;PROJ_NOME;CLIENTE;OBRA;LOCALIZACAO;ESPECIALIDADE;PROJETOU;
+#   FASE;FASE_PFIX;EMISSAO;DATA;PFIX;LAYOUT;DES_NUM;TIPO;ELEMENTO;TITULO;
+#   REV_A;DATA_A;DESC_A;REV_B;DATA_B;DESC_B;REV_C;DATA_C;DESC_C;REV_D;DATA_D;DESC_D;REV_E;DATA_E;DESC_E;
+#   DWG_SOURCE;ID_CAD
 CSV_HEADER_MAP = {
-    'TAG DO LAYOUT': 'layout_name',
+    # Projeto
+    'PROJ_NUM': 'proj_num',
+    'PROJ_NOME': 'proj_nome',
     'CLIENTE': 'cliente',
     'OBRA': 'obra',
     'LOCALIZAÇÃO': 'localizacao',
     'LOCALIZACAO': 'localizacao',
     'ESPECIALIDADE': 'especialidade',
+    'PROJETOU': 'projetou',
+    # Fase e Emissão
     'FASE': 'fase',
+    'FASE_PFIX': 'fase_pfix',
+    'EMISSAO': 'emissao',
+    'EMISSÃO': 'emissao',
+    'DATA': 'data',
     'DATA 1ª EMISSÃO': 'data',
     'DATA 1ª EMISSAO': 'data',
-    'PROJETOU': 'projetou',
-    'NUMERO DE DESENHO': 'des_num',
+    # Desenho
+    'PFIX': 'pfix',
+    'LAYOUT': 'layout_name',
+    'TAG DO LAYOUT': 'layout_name',
     'DES_NUM': 'des_num',
+    'NUMERO DE DESENHO': 'des_num',
     'TIPO': 'tipo_display',
     'ELEMENTO': 'elemento',
     'TITULO': 'titulo',
+    # Revisões A-E
+    'REV_A': 'rev_a',
     'REVISÃO A': 'rev_a',
     'REVISAO A': 'rev_a',
-    'REV_A': 'rev_a',
-    'DATA REVISAO A': 'data_a',
     'DATA_A': 'data_a',
+    'DATA REVISAO A': 'data_a',
+    'DESC_A': 'desc_a',
     'DESCRIÇÃO REVISÃO A': 'desc_a',
     'DESCRICAO REVISAO A': 'desc_a',
-    'DESC_A': 'desc_a',
+    'REV_B': 'rev_b',
     'REVISÃO B': 'rev_b',
     'REVISAO B': 'rev_b',
-    'REV_B': 'rev_b',
-    'DATA REVISAO B': 'data_b',
     'DATA_B': 'data_b',
+    'DATA REVISAO B': 'data_b',
+    'DESC_B': 'desc_b',
     'DESCRIÇÃO REVISÃO B': 'desc_b',
     'DESCRICAO REVISAO B': 'desc_b',
-    'DESC_B': 'desc_b',
+    'REV_C': 'rev_c',
     'REVISÃO C': 'rev_c',
     'REVISAO C': 'rev_c',
-    'REV_C': 'rev_c',
-    'DATA REVISAO C': 'data_c',
     'DATA_C': 'data_c',
+    'DATA REVISAO C': 'data_c',
+    'DESC_C': 'desc_c',
     'DESCRIÇÃO REVISÃO C': 'desc_c',
     'DESCRICAO REVISAO C': 'desc_c',
-    'DESC_C': 'desc_c',
+    'REV_D': 'rev_d',
     'REVISÃO D': 'rev_d',
     'REVISAO D': 'rev_d',
-    'REV_D': 'rev_d',
-    'DATA REVISAO D': 'data_d',
     'DATA_D': 'data_d',
+    'DATA REVISAO D': 'data_d',
+    'DESC_D': 'desc_d',
     'DESCRIÇÃO REVISÃO D': 'desc_d',
     'DESCRICAO REVISAO D': 'desc_d',
-    'DESC_D': 'desc_d',
+    'REV_E': 'rev_e',
     'REVISÃO E': 'rev_e',
     'REVISAO E': 'rev_e',
-    'REV_E': 'rev_e',
-    'DATA REVISAO E': 'data_e',
     'DATA_E': 'data_e',
+    'DATA REVISAO E': 'data_e',
+    'DESC_E': 'desc_e',
     'DESCRIÇÃO REVISÃO E': 'desc_e',
     'DESCRICAO REVISAO E': 'desc_e',
-    'DESC_E': 'desc_e',
-    'NOME DWG': 'dwg_name',
+    # Source
     'DWG_SOURCE': 'dwg_name',
+    'NOME DWG': 'dwg_name',
     'ID_CAD': 'id_cad',
 }
 
@@ -224,17 +241,22 @@ def import_csv_to_db(csv_path: str, conn) -> int:
         r_data = max_rev['rev_date']
         r_desc = max_rev['rev_desc']
         
-        # Prepare desenho data
+        # Prepare desenho data (todos os campos da LSP V41)
         desenho_data = {
             'layout_name': layout_name,
             'dwg_name': dwg_name,
+            'proj_num': parsed.get('proj_num', ''),
+            'proj_nome': parsed.get('proj_nome', ''),
             'cliente': parsed.get('cliente', ''),
             'obra': parsed.get('obra', ''),
             'localizacao': parsed.get('localizacao', ''),
             'especialidade': parsed.get('especialidade', ''),
             'fase': parsed.get('fase', ''),
+            'fase_pfix': parsed.get('fase_pfix', ''),
+            'emissao': parsed.get('emissao', ''),
             'projetou': parsed.get('projetou', ''),
             'escalas': '',  # Not in CSV
+            'pfix': parsed.get('pfix', ''),
             'tipo_display': tipo_display,
             'tipo_key': tipo_key,
             'elemento': elemento,
@@ -246,6 +268,7 @@ def import_csv_to_db(csv_path: str, conn) -> int:
             'r_data': r_data,
             'r_desc': r_desc,
             'data': parsed.get('data', ''),
+            'id_cad': parsed.get('id_cad', ''),
             'raw_attributes': str(parsed)  # Store original parsed data
         }
         

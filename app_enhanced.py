@@ -24,6 +24,11 @@ from db import (
     get_desenho_by_id, get_stats_by_estado, ESTADOS_VALIDOS,
     get_unique_revision_dates, get_desenhos_at_date
 )
+from db_projects import (
+    get_all_projetos, get_projeto_by_num, upsert_projeto,
+    get_desenhos_by_projeto, get_projeto_stats, get_unique_dwg_sources,
+    inicializar_multiproject
+)
 from json_importer import import_all_json
 from csv_importer import import_all_csv, import_single_csv
 from lpp_builder import build_lpp_from_db
@@ -92,6 +97,17 @@ def load_custom_css():
             border-radius: 6px;
             padding: 8px 12px !important;
             box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+        
+        /* Sidebar metrics - darker background to match sidebar */
+        [data-testid="stSidebar"] div[data-testid="metric-container"] {
+            background-color: #34495e !important;
+            border: 1px solid #4a5f7f;
+        }
+        
+        [data-testid="stSidebar"] [data-testid="stMetricValue"],
+        [data-testid="stSidebar"] [data-testid="stMetricLabel"] {
+            color: #ffffff !important;
         }
         
         /* Compact buttons */
@@ -216,6 +232,18 @@ def init_db():
 
 init_db()
 
+# Initialize multi-project support (V42+)
+try:
+    inicializar_multiproject()
+except Exception:
+    pass  # Already initialized
+
+# Initialize session state for multi-project
+if 'projeto_ativo' not in st.session_state:
+    st.session_state['projeto_ativo'] = None
+if 'projetos_mode' not in st.session_state:
+    st.session_state['projetos_mode'] = 'list'
+
 # ========================================
 # SIDEBAR NAVIGATION
 # ========================================
@@ -229,10 +257,10 @@ with st.sidebar:
     
     selected_page = option_menu(
         menu_title=None,
-        options=["Dashboard", "Gestão de Desenhos", "Histórico", "Configurações"],
-        icons=["speedometer2", "pencil-square", "clock-history", "gear"],
+        options=["Projetos", "Gestão de Desenhos", "Dashboard", "Histórico", "Configurações"],
+        icons=["folder", "pencil-square", "speedometer2", "clock-history", "gear"],
         menu_icon="cast",
-        default_index=1,  # Start on "Gestão de Desenhos" (main feature)
+        default_index=1,  # Start on "Gestão de Desenhos"
         styles={
             "container": {"padding": "0!important", "background-color": "transparent"},
             "icon": {"color": "#ffffff", "font-size": "18px"}, 
@@ -253,6 +281,23 @@ with st.sidebar:
     
     st.markdown("---")
     
+    # Projeto Ativo Indicator
+    if st.session_state.get('projeto_ativo'):
+        conn = get_connection()
+        projeto = get_projeto_by_num(conn, st.session_state['projeto_ativo'])
+        conn.close()
+        
+        if projeto:
+            st.success(f"📂 **Projeto Ativo:**\n{projeto['proj_num']} - {projeto['proj_nome']}")
+            if st.button("🔄 Limpar Seleção", use_container_width=True):
+                st.session_state['projeto_ativo'] = None
+                st.rerun()
+    else:
+        st.warning("⚠️ Nenhum projeto selecionado")
+        st.caption("Vá a 'Projetos' para selecionar")
+    
+    st.markdown("---")
+    
     # Quick stats in sidebar
     conn = get_connection()
     db_stats = get_db_stats(conn)
@@ -263,9 +308,148 @@ with st.sidebar:
     st.metric("DWG Files", db_stats['total_dwgs'], label_visibility="visible")
 
 # ========================================
+# PAGE: PROJETOS
+# ========================================
+if selected_page == "Projetos":
+    st.title("📂 Gestão de Projetos")
+    
+    # Display mode selection
+    col_mode1, col_mode2, col_mode3 = st.columns([1, 1, 3])
+    with col_mode1:
+        if st.button("📋 Listar Projetos", use_container_width=True, type="primary" if st.session_state.get('projetos_mode', 'list') == 'list' else "secondary"):
+            st.session_state['projetos_mode'] = 'list'
+            st.rerun()
+    with col_mode2:
+        if st.button("➕ Novo Projeto", use_container_width=True, type="primary" if st.session_state.get('projetos_mode') == 'create' else "secondary"):
+            st.session_state['projetos_mode'] = 'create'
+            st.rerun()
+    
+    st.markdown("---")
+    
+    # LIST MODE
+    if st.session_state.get('projetos_mode', 'list') == 'list':
+        conn = get_connection()
+        projetos = get_all_projetos(conn)
+        conn.close()
+        
+        if not projetos:
+            st.info("ℹ️ Nenhum projeto encontrado. Importe um CSV para criar projetos automaticamente.")
+        else:
+            st.markdown("### 📊 Projetos Disponíveis")
+            
+            # Create table data
+            projeto_data = []
+            for p in projetos:
+                conn = get_connection()
+                stats = get_projeto_stats(conn, p['proj_num'])
+                conn.close()
+                
+                projeto_data.append({
+                    'PROJ_NUM': p['proj_num'],
+                    'NOME': p['proj_nome'] or '-',
+                    'CLIENTE': p['cliente'] or '-',
+                    'OBRA': p['obra'] or '-',
+                    'DESENHOS': stats['total_desenhos'],
+                    'DWGs': stats['dwg_sources_count']
+                })
+            
+            df_projetos = pd.DataFrame(projeto_data)
+            
+            # Display with AgGrid
+            gb = GridOptionsBuilder.from_dataframe(df_projetos)
+            gb.configure_selection('single', use_checkbox=False)
+            gb.configure_default_column(filterable=True, sorteable=True, resizable=True)
+            gb.configure_pagination(paginationPageSize=20)
+            gb.configure_column("PROJ_NUM", header_name="Projeto", width=100, pinned='left')
+            gb.configure_column("NOME", header_name="Nome", width=250)
+            gb.configure_column("CLIENTE", header_name="Cliente", width=200)
+            gb.configure_column("OBRA", header_name="Obra", width=200)
+            gb.configure_column("DESENHOS", header_name="Desenhos", width=100)
+            gb.configure_column("DWGs", header_name="DWGs", width=100)
+            
+            grid_response = AgGrid(
+                df_projetos,
+                gridOptions=gb.build(),
+                height=400,
+                theme='streamlit',
+                update_mode=GridUpdateMode.SELECTION_CHANGED
+            )
+            
+            st.markdown("---")
+            st.info("💡 **Como ativar um projeto:** Selecione uma linha na tabela acima e clique no botão 'Ativar Projeto' abaixo.")
+            
+            # Selection handler
+            selected_rows = grid_response['selected_rows']
+            if selected_rows is not None and len(selected_rows) > 0:
+                selected = selected_rows.iloc[0] if isinstance(selected_rows, pd.DataFrame) else selected_rows[0]
+                proj_num = selected['PROJ_NUM']
+                
+                col_sel1, col_sel2 = st.columns([3, 1])
+                with col_sel1:
+                    st.success(f"**✓ Selecionado:** {proj_num} - {selected['NOME']}")
+                with col_sel2:
+                    if st.button(f"✅ Ativar Projeto", type="primary", use_container_width=True, key="btn_ativar_projeto"):
+                        st.session_state['projeto_ativo'] = proj_num
+                        st.success(f"Projeto {proj_num} ativado!")
+                        st.rerun()
+            else:
+                st.warning("⚠️ Nenhum projeto selecionado. Clique numa linha da tabela acima.")
+    
+    # CREATE MODE
+    elif st.session_state['projetos_mode'] == 'create':
+        st.markdown("### ➕ Criar Novo Projeto")
+        
+        with st.form("create_projeto"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                proj_num = st.text_input("PROJ_NUM *", help="Número único do projeto (ex: 669)")
+                proj_nome = st.text_input("Nome do Projeto")
+                cliente = st.text_input("Cliente")
+                obra = st.text_input("Obra")
+            
+            with col2:
+                localizacao = st.text_input("Localização")
+                especialidade = st.text_input("Especialidade", value="ESTRUTURAS")
+                projetou = st.text_input("Projetou")
+            
+            col_submit1, col_submit2 = st.columns([1, 3])
+            with col_submit1:
+                submitted = st.form_submit_button("💾 Criar Projeto", type="primary", use_container_width=True)
+            with col_submit2:
+                if st.form_submit_button("❌ Cancelar", use_container_width=True):
+                    st.session_state['projetos_mode'] = 'list'
+                    st.rerun()
+            
+            if submitted:
+                if not proj_num:
+                    st.error("❌ PROJ_NUM é obrigatório")
+                else:
+                    projeto_data = {
+                        'proj_num': proj_num,
+                        'proj_nome': proj_nome,
+                        'cliente': cliente,
+                        'obra': obra,
+                        'localizacao': localizacao,
+                        'especialidade': especialidade,
+                        'projetou': projetou
+                    }
+                    
+                    try:
+                        conn = get_connection()
+                        upsert_projeto(conn, projeto_data)
+                        conn.close()
+                        
+                        st.success(f"✅ Projeto {proj_num} criado com sucesso!")
+                        st.session_state['projetos_mode'] = 'list'
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Erro ao criar projeto: {e}")
+
+# ========================================
 # PAGE: DASHBOARD
 # ========================================
-if selected_page == "Dashboard":
+elif selected_page == "Dashboard":
     st.title("📊 Dashboard - Visão Geral")
     
     # Load data
@@ -449,6 +633,50 @@ elif selected_page == "Gestão de Desenhos":
         # Filters
         st.markdown("### 🔍 Filtros")
         
+        # Project and DWG Source filters
+        col_proj, col_dwg = st.columns(2)
+        
+        with col_proj:
+            conn = get_connection()
+            projetos = get_all_projetos(conn)
+            conn.close()
+            
+            projeto_options = ["Todos"]
+            if projetos:
+                projeto_options += [f"{p['proj_num']} - {p['proj_nome']}" for p in projetos]
+            
+            # Get default index based on active project
+            default_idx = 0
+            if st.session_state.get('projeto_ativo'):
+                for idx, opt in enumerate(projeto_options):
+                    if opt.startswith(st.session_state['projeto_ativo']):
+                        default_idx = idx
+                        break
+            
+            projeto_filter_label = st.selectbox(
+                "📂 PROJETO", 
+                projeto_options,
+                index=default_idx,
+                key="projeto_filter_select"
+            )
+            
+            # Extract proj_num from selection
+            if projeto_filter_label != "Todos":
+                projeto_filter = projeto_filter_label.split(" - ")[0]
+            else:
+                projeto_filter = "Todos"
+        
+        with col_dwg:
+            if projeto_filter != "Todos":
+                conn = get_connection()
+                dwg_sources = get_unique_dwg_sources(conn, projeto_filter)
+                conn.close()
+                dwg_options = ["Todos"] + [d for d in dwg_sources if d]
+            else:
+                dwg_options = ["Todos"]
+            
+            dwg_filter = st.selectbox("📁 DWG SOURCE", dwg_options, key="dwg_filter_select")
+        
         # Estado filter buttons
         estado_col1, estado_col2, estado_col3, estado_col4, estado_col5 = st.columns(5)
         
@@ -502,6 +730,15 @@ elif selected_page == "Gestão de Desenhos":
         # Apply filters
         filtered_df = df.copy()
         
+        # Apply project and DWG filters
+        if projeto_filter != "Todos":
+            if 'proj_num' in filtered_df.columns:
+                filtered_df = filtered_df[filtered_df['proj_num'] == projeto_filter]
+        
+        if dwg_filter != "Todos":
+            if 'dwg_source' in filtered_df.columns:
+                filtered_df = filtered_df[filtered_df['dwg_source'] == dwg_filter]
+        
         if st.session_state.estado_filter == 'em_atraso':
             today = datetime.now().strftime('%Y-%m-%d')
             filtered_df = filtered_df[
@@ -536,36 +773,114 @@ elif selected_page == "Gestão de Desenhos":
         # AgGrid Table
         st.markdown("### 📋 Tabela de Desenhos")
         
-        # Prepare columns for AgGrid
-        display_columns = [
-            'des_num', 'layout_name', 'tipo_display', 'elemento', 'titulo',
+        # Column Selection
+        st.markdown("#### 🔧 Seleção de Colunas")
+        
+        # All available columns from the dataframe
+        all_columns = [
+            'id', 'des_num', 'layout_name', 'tipo_display', 'tipo_key', 'elemento', 'elemento_key',
+            'titulo', 'r', 'r_data', 'r_desc', 'estado_interno', 'comentario', 'data_limite',
+            'responsavel', 'dwg_name', 'dwg_source', 'cliente', 'obra', 'localizacao',
+            'especialidade', 'fase', 'projetou', 'escalas', 'data', 'proj_num', 'proj_nome',
+            'fase_pfix', 'emissao', 'pfix', 'id_cad', 'created_at', 'updated_at'
+        ]
+        
+        # Default visible columns
+        default_visible = [
+            'id', 'des_num', 'layout_name', 'tipo_display', 'elemento', 'titulo',
             'r', 'r_data', 'estado_interno', 'comentario', 'data_limite', 'dwg_name'
         ]
         
-        aggrid_df = filtered_df[[col for col in display_columns if col in filtered_df.columns]].copy()
+        # Initialize session state for visible columns
+        if 'visible_columns' not in st.session_state:
+            st.session_state['visible_columns'] = default_visible
+        
+        # Filter to only show columns that exist in the filtered dataframe
+        available_columns = [col for col in all_columns if col in filtered_df.columns]
+        
+        # Column selector
+        col_selector1, col_selector2 = st.columns([3, 1])
+        with col_selector1:
+            selected_columns = st.multiselect(
+                "Escolha as colunas a visualizar:",
+                options=available_columns,
+                default=[col for col in st.session_state['visible_columns'] if col in available_columns],
+                key="column_selector"
+            )
+        
+        with col_selector2:
+            if st.button("🔄 Restaurar Padrão", use_container_width=True):
+                st.session_state['visible_columns'] = default_visible
+                st.rerun()
+        
+        # Update session state
+        if selected_columns:
+            st.session_state['visible_columns'] = selected_columns
+            display_columns = selected_columns
+        else:
+            st.info("⚠️ Selecione pelo menos uma coluna para visualizar")
+            display_columns = default_visible
+        
+        # Ensure 'id' is always included for functionality (but can be hidden in display)
+        if 'id' not in display_columns and 'id' in filtered_df.columns:
+            aggrid_df = filtered_df[['id'] + [col for col in display_columns if col in filtered_df.columns]].copy()
+        else:
+            aggrid_df = filtered_df[[col for col in display_columns if col in filtered_df.columns]].copy()
+        
+        # Store original data for comparison
+        if 'original_data' not in st.session_state:
+            st.session_state['original_data'] = aggrid_df.copy()
         
         # Format estado_interno for display
         if 'estado_interno' in aggrid_df.columns:
-            aggrid_df['estado_interno'] = aggrid_df['estado_interno'].apply(
-                lambda x: ESTADO_CONFIG.get(x, ESTADO_CONFIG['projeto'])['label']
+            # Keep original values for editing, just display formatted
+            aggrid_df['estado_interno_display'] = aggrid_df['estado_interno'].apply(
+                lambda x: ESTADO_CONFIG.get(x, ESTADO_CONFIG['projeto'])['label'] if x else 'projeto'
             )
         
         # Build AgGrid options
         gb = GridOptionsBuilder.from_dataframe(aggrid_df)
         gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=50)
         gb.configure_side_bar()
-        gb.configure_default_column(filterable=True, sorteable=True, resizable=True)
-        gb.configure_selection('single', use_checkbox=True, pre_selected_rows=[])
+        gb.configure_default_column(filterable=True, sorteable=True, resizable=True, editable=True)
+        gb.configure_selection('multiple', use_checkbox=True, pre_selected_rows=[])
         
         # Special column configurations
-        gb.configure_column("des_num", header_name="Nº Desenho", width=120, pinned='left')
-        gb.configure_column("layout_name", header_name="Layout", width=200)
-        gb.configure_column("tipo_display", header_name="Tipo", width=100)
-        gb.configure_column("elemento", header_name="Elemento", width=150)
-        gb.configure_column("titulo", header_name="Título", width=250)
-        gb.configure_column("r", header_name="Rev", width=80)
-        gb.configure_column("estado_interno", header_name="Estado", width=150)
-        gb.configure_column("comentario", header_name="Comentário", width=200, editable=True)
+        if 'id' in aggrid_df.columns:
+            gb.configure_column("id", header_name="ID", width=80, pinned='left', editable=False)
+        if 'des_num' in aggrid_df.columns:
+            gb.configure_column("des_num", header_name="Nº Desenho", width=150, pinned='left')
+        if 'layout_name' in aggrid_df.columns:
+            gb.configure_column("layout_name", header_name="Layout", width=200)
+        if 'tipo_display' in aggrid_df.columns:
+            gb.configure_column("tipo_display", header_name="Tipo", width=150)
+        if 'elemento' in aggrid_df.columns:
+            gb.configure_column("elemento", header_name="Elemento", width=150)
+        if 'titulo' in aggrid_df.columns:
+            gb.configure_column("titulo", header_name="Título", width=250)
+        if 'r' in aggrid_df.columns:
+            gb.configure_column("r", header_name="Rev", width=80)
+        if 'r_data' in aggrid_df.columns:
+            gb.configure_column("r_data", header_name="Data Rev", width=120)
+        if 'estado_interno' in aggrid_df.columns:
+            # Use dropdown for estado_interno
+            gb.configure_column("estado_interno", header_name="Estado", width=150, 
+                              cellEditor='agSelectCellEditor',
+                              cellEditorParams={'values': ['projeto', 'needs_revision', 'built']})
+        if 'comentario' in aggrid_df.columns:
+            gb.configure_column("comentario", header_name="Comentário", width=250)
+        if 'data_limite' in aggrid_df.columns:
+            gb.configure_column("data_limite", header_name="Data Limite", width=120)
+        if 'responsavel' in aggrid_df.columns:
+            gb.configure_column("responsavel", header_name="Responsável", width=150)
+        if 'dwg_name' in aggrid_df.columns:
+            gb.configure_column("dwg_name", header_name="DWG", width=150)
+        if 'dwg_source' in aggrid_df.columns:
+            gb.configure_column("dwg_source", header_name="DWG Source", width=150)
+        if 'proj_num' in aggrid_df.columns:
+            gb.configure_column("proj_num", header_name="Proj Nº", width=100)
+        if 'proj_nome' in aggrid_df.columns:
+            gb.configure_column("proj_nome", header_name="Projeto", width=200)
         
         gridOptions = gb.build()
         
@@ -573,12 +888,82 @@ elif selected_page == "Gestão de Desenhos":
         grid_response = AgGrid(
             aggrid_df,
             gridOptions=gridOptions,
-            update_mode=GridUpdateMode.MODEL_CHANGED | GridUpdateMode.SELECTION_CHANGED,
+            update_mode=GridUpdateMode.MODEL_CHANGED,
             fit_columns_on_grid_load=False,
-            theme='streamlit',  # 'streamlit', 'alpine', 'balham', 'material'
+            theme='streamlit',
             height=500,
             allow_unsafe_jscode=True,
+            reload_data=False
         )
+        
+        # Save Changes Button
+        st.markdown("---")
+        col_save1, col_save2, col_save3 = st.columns([1, 2, 1])
+        
+        with col_save1:
+            if st.button("💾 Guardar Alterações", type="primary", use_container_width=True):
+                if grid_response['data'] is not None:
+                    edited_df = pd.DataFrame(grid_response['data'])
+                    
+                    # Compare with original and update database
+                    changes_made = 0
+                    errors = []
+                    
+                    conn = get_connection()
+                    cursor = conn.cursor()
+                    
+                    try:
+                        for idx, row in edited_df.iterrows():
+                            if 'id' in row and pd.notna(row['id']):
+                                desenho_id = int(row['id'])
+                                
+                                # Build update dict with all editable fields
+                                update_fields = {}
+                                for col in edited_df.columns:
+                                    if col != 'id' and col != 'estado_interno_display':
+                                        value = row[col]
+                                        # Convert NaN to None
+                                        if pd.isna(value):
+                                            update_fields[col] = None
+                                        else:
+                                            update_fields[col] = str(value) if value is not None else None
+                                
+                                # Build UPDATE query dynamically
+                                if update_fields:
+                                    set_clause = ", ".join([f"{k} = ?" for k in update_fields.keys()])
+                                    values = list(update_fields.values()) + [desenho_id]
+                                    
+                                    query = f"UPDATE desenhos SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                                    cursor.execute(query, values)
+                                    changes_made += 1
+                        
+                        conn.commit()
+                        st.success(f"✅ {changes_made} desenho(s) atualizado(s) com sucesso!")
+                        
+                        # Update original data
+                        st.session_state['original_data'] = edited_df.copy()
+                        
+                        # Refresh page
+                        st.rerun()
+                        
+                    except Exception as e:
+                        conn.rollback()
+                        st.error(f"❌ Erro ao guardar alterações: {e}")
+                        errors.append(str(e))
+                    finally:
+                        conn.close()
+                else:
+                    st.warning("⚠️ Nenhum dado para guardar")
+        
+        with col_save2:
+            st.caption("💡 Edite as células diretamente na tabela e clique em 'Guardar Alterações'")
+        
+        with col_save3:
+            if st.button("🔄 Recarregar Dados", use_container_width=True):
+                if 'original_data' in st.session_state:
+                    del st.session_state['original_data']
+                st.rerun()
+
         
         # Handle selection
         selected_rows = grid_response['selected_rows']
@@ -795,26 +1180,102 @@ elif selected_page == "Configurações":
         
         st.markdown("---")
         
-        # Upload CSV directly
-        uploaded_csv = st.file_uploader("📤 Ou faça upload direto de CSV", type=['csv'])
+        # Upload CSV directly with project selection
+        st.subheader("📤 Upload CSV com Seleção de Projeto")
+        uploaded_csv = st.file_uploader("Escolha um ficheiro CSV", type=['csv'], key="csv_uploader_main")
         
         if uploaded_csv is not None:
-            if st.button("➕ Importar Ficheiro", type="primary", use_container_width=True):
-                temp_path = Path("data/csv_in") / uploaded_csv.name
-                temp_path.parent.mkdir(parents=True, exist_ok=True)
+            # Initialize session state for CSV import if not exists
+            if 'csv_import_mode' not in st.session_state:
+                st.session_state['csv_import_mode'] = None
+            if 'csv_target_project' not in st.session_state:
+                st.session_state['csv_target_project'] = None
+            
+            st.info(f"**Ficheiro selecionado:** {uploaded_csv.name}")
+            
+            # Project selection
+            st.markdown("### 📂 Escolha o Projeto")
+            
+            col_mode1, col_mode2 = st.columns(2)
+            
+            with col_mode1:
+                if st.button("🆕 Criar Novo Projeto", use_container_width=True, 
+                            type="primary" if st.session_state.get('csv_import_mode') == 'new' else "secondary"):
+                    st.session_state['csv_import_mode'] = 'new'
+                    st.rerun()
+            
+            with col_mode2:
+                if st.button("📁 Adicionar a Projeto Existente", use_container_width=True,
+                            type="primary" if st.session_state.get('csv_import_mode') == 'existing' else "secondary"):
+                    st.session_state['csv_import_mode'] = 'existing'
+                    st.rerun()
+            
+            # Show appropriate options based on mode
+            if st.session_state.get('csv_import_mode') == 'new':
+                st.success("✓ Modo: **Criar Novo Projeto**")
+                st.caption("Os dados do projeto serão extraídos automaticamente do CSV (PROJ_NUM, PROJ_NOME, CLIENTE, etc.)")
                 
-                with open(temp_path, 'wb') as f:
-                    f.write(uploaded_csv.getbuffer())
+                if st.button("➕ Importar e Criar Projeto", type="primary", use_container_width=True, key="btn_import_new"):
+                    temp_path = Path("data/csv_in") / uploaded_csv.name
+                    temp_path.parent.mkdir(parents=True, exist_ok=True)
+                    
+                    with open(temp_path, 'wb') as f:
+                        f.write(uploaded_csv.getbuffer())
+                    
+                    with st.spinner(f"Importando {uploaded_csv.name} e criando projeto..."):
+                        try:
+                            conn = get_connection()
+                            stats = import_single_csv(str(temp_path), conn, target_proj_num=None)
+                            conn.close()
+                            st.success(f"✅ Importado! Desenhos: {stats['desenhos_imported']}")
+                            # Reset state
+                            st.session_state['csv_import_mode'] = None
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Erro: {e}")
+            
+            elif st.session_state.get('csv_import_mode') == 'existing':
+                st.success("✓ Modo: **Adicionar a Projeto Existente**")
                 
-                with st.spinner(f"Importando {uploaded_csv.name}..."):
-                    try:
-                        conn = get_connection()
-                        stats = import_single_csv(str(temp_path), conn)
-                        conn.close()
-                        st.success(f"✅ Importado! Desenhos: {stats['desenhos_imported']}")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"❌ Erro: {e}")
+                # Get list of existing projects
+                conn = get_connection()
+                projetos = get_all_projetos(conn)
+                conn.close()
+                
+                if not projetos:
+                    st.warning("⚠️ Nenhum projeto existente. Crie um projeto primeiro ou use 'Criar Novo Projeto'.")
+                else:
+                    projeto_options = [f"{p['proj_num']} - {p['proj_nome']}" for p in projetos]
+                    selected_projeto = st.selectbox(
+                        "Selecione o projeto:",
+                        projeto_options,
+                        key="csv_target_project_select"
+                    )
+                    
+                    if selected_projeto:
+                        target_proj_num = selected_projeto.split(' - ')[0]
+                        st.caption(f"Os desenhos do CSV serão associados ao projeto **{target_proj_num}**")
+                        
+                        if st.button("➕ Importar para Projeto", type="primary", use_container_width=True, key="btn_import_existing"):
+                            temp_path = Path("data/csv_in") / uploaded_csv.name
+                            temp_path.parent.mkdir(parents=True, exist_ok=True)
+                            
+                            with open(temp_path, 'wb') as f:
+                                f.write(uploaded_csv.getbuffer())
+                            
+                            with st.spinner(f"Importando {uploaded_csv.name} para projeto {target_proj_num}..."):
+                                try:
+                                    conn = get_connection()
+                                    stats = import_single_csv(str(temp_path), conn, target_proj_num=target_proj_num)
+                                    conn.close()
+                                    st.success(f"✅ Importado para projeto {target_proj_num}! Desenhos: {stats['desenhos_imported']}")
+                                    # Reset state
+                                    st.session_state['csv_import_mode'] = None
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"❌ Erro: {e}")
+            else:
+                st.info("💡 Escolha um modo acima para continuar")
     
     # TAB 2: Generate LPP
     with tab2:

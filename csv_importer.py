@@ -1,33 +1,47 @@
 """
 CSV importer - reads CSV files from data/csv_in/ and imports to database.
-Supports the 29-field "Todos os Campos" export from AutoLISP.
+Supports the 34-field "Todos os Campos" export from AutoLISP (V42+).
 """
 import csv
 import os
 from pathlib import Path
 from typing import List, Dict, Any
 
-from db import upsert_desenho, replace_revisoes
+from db import upsert_desenho, replace_revisoes, get_connection
+from db_projects import upsert_projeto
 from utils import normalize_tipo_display_to_key, normalize_elemento_to_key
 
 
-# Mapeamento de headers CSV para campos internos
+# Mapeamento de headers CSV para campos internos (V42 - 34 campos)
 CSV_HEADER_MAP = {
+    # Projeto
+    'PROJ_NUM': 'proj_num',
+    'PROJ_NOME': 'proj_nome',
     'TAG DO LAYOUT': 'layout_name',
+    'LAYOUT': 'layout_name',
     'CLIENTE': 'cliente',
     'OBRA': 'obra',
     'LOCALIZAÇÃO': 'localizacao',
     'LOCALIZACAO': 'localizacao',
     'ESPECIALIDADE': 'especialidade',
+    'PROJETOU': 'projetou',
+    # Fase e Emissão
     'FASE': 'fase',
+    'FASE_PFIX': 'fase_pfix',
+    'EMISSAO': 'emissao',
+    'EMISSÃO': 'emissao',
+    'DATA': 'data',
     'DATA 1ª EMISSÃO': 'data',
     'DATA 1ª EMISSAO': 'data',
-    'PROJETOU': 'projetou',
+    # Desenho
+    'PFIX': 'pfix',
     'NUMERO DE DESENHO': 'des_num',
     'DES_NUM': 'des_num',
     'TIPO': 'tipo_display',
     'ELEMENTO': 'elemento',
     'TITULO': 'titulo',
+    'TÍTULO': 'titulo',
+    # Revisões A
     'REVISÃO A': 'rev_a',
     'REVISAO A': 'rev_a',
     'REV_A': 'rev_a',
@@ -36,6 +50,7 @@ CSV_HEADER_MAP = {
     'DESCRIÇÃO REVISÃO A': 'desc_a',
     'DESCRICAO REVISAO A': 'desc_a',
     'DESC_A': 'desc_a',
+    # Revisões B
     'REVISÃO B': 'rev_b',
     'REVISAO B': 'rev_b',
     'REV_B': 'rev_b',
@@ -44,6 +59,7 @@ CSV_HEADER_MAP = {
     'DESCRIÇÃO REVISÃO B': 'desc_b',
     'DESCRICAO REVISAO B': 'desc_b',
     'DESC_B': 'desc_b',
+    # Revisões C
     'REVISÃO C': 'rev_c',
     'REVISAO C': 'rev_c',
     'REV_C': 'rev_c',
@@ -52,6 +68,7 @@ CSV_HEADER_MAP = {
     'DESCRIÇÃO REVISÃO C': 'desc_c',
     'DESCRICAO REVISAO C': 'desc_c',
     'DESC_C': 'desc_c',
+    # Revisões D
     'REVISÃO D': 'rev_d',
     'REVISAO D': 'rev_d',
     'REV_D': 'rev_d',
@@ -60,6 +77,7 @@ CSV_HEADER_MAP = {
     'DESCRIÇÃO REVISÃO D': 'desc_d',
     'DESCRICAO REVISAO D': 'desc_d',
     'DESC_D': 'desc_d',
+    # Revisões E
     'REVISÃO E': 'rev_e',
     'REVISAO E': 'rev_e',
     'REV_E': 'rev_e',
@@ -68,14 +86,17 @@ CSV_HEADER_MAP = {
     'DESCRIÇÃO REVISÃO E': 'desc_e',
     'DESCRICAO REVISAO E': 'desc_e',
     'DESC_E': 'desc_e',
-    'NOME DWG': 'dwg_name',
-    'DWG_SOURCE': 'dwg_name',
+    # Sistema
+    'NOME DWG': 'dwg_source',  # V42: usar dwg_source em vez de dwg_name
+    'DWG_SOURCE': 'dwg_source',
     'ID_CAD': 'id_cad',
 }
 
 
 def normalize_header(header: str) -> str:
     """Normalize header name to internal field name."""
+    if not header or header is None:
+        return ""
     header_upper = header.strip().upper()
     return CSV_HEADER_MAP.get(header_upper, header_upper.lower())
 
@@ -93,8 +114,12 @@ def parse_csv_row(row: Dict[str, str], headers_map: Dict[str, str]) -> Dict[str,
     """
     parsed = {}
     for original_header, value in row.items():
+        # Skip None or empty headers
+        if not original_header:
+            continue
         normalized = headers_map.get(original_header, original_header.lower())
-        parsed[normalized] = value.strip() if value else ''
+        # Safely handle None values
+        parsed[normalized] = value.strip() if value is not None else ''
     return parsed
 
 
@@ -174,13 +199,14 @@ def load_csv_file(csv_path: str, delimiter: str = ';') -> List[Dict[str, str]]:
     return rows
 
 
-def import_csv_to_db(csv_path: str, conn) -> int:
+def import_csv_to_db(csv_path: str, conn, target_proj_num: str = None) -> int:
     """
     Import one CSV file into database.
     
     Args:
         csv_path: Path to CSV file
         conn: Database connection
+        target_proj_num: Optional project number to assign all drawings to (overrides CSV data)
         
     Returns:
         Number of desenhos imported
@@ -206,8 +232,30 @@ def import_csv_to_db(csv_path: str, conn) -> int:
             print(f"Warning: Row without layout_name, skipping")
             continue
         
+        # V42: Extract project data and auto-create/update project
+        # If target_proj_num is provided, use it; otherwise use CSV data
+        if target_proj_num:
+            proj_num = target_proj_num
+        else:
+            proj_num = parsed.get('proj_num', '')
+        
+        if proj_num:
+            projeto_data = {
+                'proj_num': proj_num,
+                'proj_nome': parsed.get('proj_nome', ''),
+                'cliente': parsed.get('cliente', ''),
+                'obra': parsed.get('obra', ''),
+                'localizacao': parsed.get('localizacao', ''),
+                'especialidade': parsed.get('especialidade', ''),
+                'projetou': parsed.get('projetou', ''),
+            }
+            try:
+                upsert_projeto(conn, projeto_data)
+            except Exception as e:
+                print(f"Warning: Could not upsert project {proj_num}: {e}")
+        
         # Extract data
-        dwg_name = parsed.get('dwg_name', 'UNKNOWN')
+        dwg_source = parsed.get('dwg_source', 'UNKNOWN')
         
         tipo_display = parsed.get('tipo_display', '')
         tipo_key = normalize_tipo_display_to_key(tipo_display)
@@ -224,28 +272,35 @@ def import_csv_to_db(csv_path: str, conn) -> int:
         r_data = max_rev['rev_date']
         r_desc = max_rev['rev_desc']
         
-        # Prepare desenho data
+        # Prepare desenho data (V42: includes all new fields)
         desenho_data = {
             'layout_name': layout_name,
-            'dwg_name': dwg_name,
+            'dwg_name': dwg_source,  # Maintain compatibility
+            'dwg_source': dwg_source,
+            'id_cad': parsed.get('id_cad', ''),
+            'proj_num': proj_num,
+            'proj_nome': parsed.get('proj_nome', ''),
             'cliente': parsed.get('cliente', ''),
             'obra': parsed.get('obra', ''),
             'localizacao': parsed.get('localizacao', ''),
             'especialidade': parsed.get('especialidade', ''),
             'fase': parsed.get('fase', ''),
+            'fase_pfix': parsed.get('fase_pfix', ''),
+            'emissao': parsed.get('emissao', ''),
+            'data': parsed.get('data', ''),
             'projetou': parsed.get('projetou', ''),
             'escalas': '',  # Not in CSV
+            'pfix': parsed.get('pfix', ''),
+            'des_num': parsed.get('des_num', ''),
             'tipo_display': tipo_display,
             'tipo_key': tipo_key,
             'elemento': elemento,
             'titulo': titulo,
             'elemento_titulo': elemento_titulo,
             'elemento_key': elemento_key,
-            'des_num': parsed.get('des_num', ''),
             'r': r,
             'r_data': r_data,
             'r_desc': r_desc,
-            'data': parsed.get('data', ''),
             'raw_attributes': str(parsed)  # Store original parsed data
         }
         
@@ -294,13 +349,14 @@ def import_all_csv(csv_dir: str, conn) -> Dict[str, int]:
     }
 
 
-def import_single_csv(csv_path: str, conn) -> Dict[str, int]:
+def import_single_csv(csv_path: str, conn, target_proj_num: str = None) -> Dict[str, int]:
     """
     Import a single CSV file into database.
     
     Args:
         csv_path: Path to CSV file
         conn: Database connection
+        target_proj_num: Optional project number to assign all drawings to
         
     Returns:
         Dictionary with stats
@@ -308,7 +364,7 @@ def import_single_csv(csv_path: str, conn) -> Dict[str, int]:
     if not Path(csv_path).exists():
         return {'files_processed': 0, 'desenhos_imported': 0, 'error': 'File not found'}
     
-    count = import_csv_to_db(csv_path, conn)
+    count = import_csv_to_db(csv_path, conn, target_proj_num)
     
     return {
         'files_processed': 1,

@@ -164,52 +164,127 @@ def upsert_desenho(conn, desenho_data: Dict[str, Any]) -> int:
         desenho_id = existing[0]
         cursor.execute("""
             UPDATE desenhos SET
+
                 dwg_name = ?,
+
                 cliente = ?,
+
                 obra = ?,
+
                 localizacao = ?,
+
                 especialidade = ?,
+
                 fase = ?,
+
                 projetou = ?,
+
                 escalas = ?,
+
                 tipo_display = ?,
+
                 tipo_key = ?,
+
                 elemento = ?,
+
                 titulo = ?,
+
                 elemento_titulo = ?,
+
                 elemento_key = ?,
+
                 des_num = ?,
+
                 r = ?,
+
                 r_data = ?,
+
                 r_desc = ?,
+
                 data = ?,
+
                 raw_attributes = ?,
+
+                proj_num = ?,
+
+                proj_nome = ?,
+
+                dwg_source = ?,
+
+                fase_pfix = ?,
+
+                emissao = ?,
+
+                pfix = ?,
+
+                id_cad = ?,
+
                 updated_at = ?
+
             WHERE id = ?
+
         """, (
+
             desenho_data.get('dwg_name', ''),
+
             desenho_data.get('cliente', ''),
+
             desenho_data.get('obra', ''),
+
             desenho_data.get('localizacao', ''),
+
             desenho_data.get('especialidade', ''),
+
             desenho_data.get('fase', ''),
+
             desenho_data.get('projetou', ''),
+
             desenho_data.get('escalas', ''),
+
             desenho_data.get('tipo_display', ''),
+
             desenho_data.get('tipo_key', ''),
+
             desenho_data.get('elemento', ''),
+
             desenho_data.get('titulo', ''),
+
             desenho_data.get('elemento_titulo', ''),
+
             desenho_data.get('elemento_key', ''),
+
             desenho_data.get('des_num', ''),
+
             desenho_data.get('r', ''),
+
             desenho_data.get('r_data', ''),
+
             desenho_data.get('r_desc', ''),
+
             desenho_data.get('data', ''),
+
             desenho_data.get('raw_attributes', ''),
+
+            desenho_data.get('proj_num', ''),
+
+            desenho_data.get('proj_nome', ''),
+
+            desenho_data.get('dwg_source', ''),
+
+            desenho_data.get('fase_pfix', ''),
+
+            desenho_data.get('emissao', ''),
+
+            desenho_data.get('pfix', ''),
+
+            desenho_data.get('id_cad', ''),
+
             datetime.now().isoformat(),
+
             desenho_id
+
         ))
+
     else:
         # INSERT
         cursor.execute("""
@@ -217,8 +292,12 @@ def upsert_desenho(conn, desenho_data: Dict[str, Any]) -> int:
                 layout_name, dwg_name, cliente, obra, localizacao,
                 especialidade, fase, projetou, escalas, tipo_display,
                 tipo_key, elemento, titulo, elemento_titulo, elemento_key, des_num,
-                r, r_data, r_desc, data, raw_attributes, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                r, r_data, r_desc, data, raw_attributes,
+
+                proj_num, proj_nome, dwg_source, fase_pfix, emissao, pfix, id_cad,
+
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             desenho_data['layout_name'],
             desenho_data.get('dwg_name', ''),
@@ -241,6 +320,13 @@ def upsert_desenho(conn, desenho_data: Dict[str, Any]) -> int:
             desenho_data.get('r_desc', ''),
             desenho_data.get('data', ''),
             desenho_data.get('raw_attributes', ''),
+            desenho_data.get('proj_num', ''),
+            desenho_data.get('proj_nome', ''),
+            desenho_data.get('dwg_source', ''),
+            desenho_data.get('fase_pfix', ''),
+            desenho_data.get('emissao', ''),
+            desenho_data.get('pfix', ''),
+            desenho_data.get('id_cad', ''),
             datetime.now().isoformat(),
             datetime.now().isoformat()
         ))

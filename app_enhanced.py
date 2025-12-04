@@ -109,15 +109,15 @@ def load_custom_css():
         }
         
         .stButton>button[kind="primary"] {
-            background: #667eea;
+            background: #556B2F;
             color: white;
             border: none;
         }
         
         .stButton>button[kind="secondary"] {
             background: white;
-            color: #667eea;
-            border: 1px solid #667eea;
+            color: #556B2F;
+            border: 1px solid #556B2F;
         }
         
         /* Compact headers */
@@ -126,7 +126,7 @@ def load_custom_css():
             color: #1a1f2e;
             margin-bottom: 16px !important;
             padding-bottom: 8px;
-            border-bottom: 3px solid #667eea;
+            border-bottom: 3px solid #556B2F;
         }
         
         h2 {
@@ -220,7 +220,11 @@ init_db()
 # SIDEBAR NAVIGATION
 # ========================================
 with st.sidebar:
-    st.image("https://via.placeholder.com/150x50/667eea/ffffff?text=JSJ", use_container_width=True)
+    # JSJ Logo
+    try:
+        st.image("assets/jsj_logo.jpg", use_container_width=True)
+    except:
+        st.markdown("### JSJ Engenharia")
     st.markdown("## 🔧 Navegação")
     
     selected_page = option_menu(
@@ -241,7 +245,7 @@ with st.sidebar:
                 "padding": "8px 12px",
             },
             "nav-link-selected": {
-                "background": "#667eea",
+                "background": "#556B2F",
                 "font-weight": "600",
             },
         }
@@ -398,7 +402,7 @@ if selected_page == "Dashboard":
                         title="Revisões ao Longo do Tempo",
                         markers=True
                     )
-                    fig_timeline.update_traces(line_color='#667eea', line_width=3)
+                    fig_timeline.update_traces(line_color='#556B2F', line_width=3)
                     fig_timeline.update_layout(height=250, margin=dict(t=40, b=20, l=20, r=20))
                     st.plotly_chart(fig_timeline, use_container_width=True)
     else:

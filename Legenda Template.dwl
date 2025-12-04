@@ -1,0 +1,3 @@
+JSJ
+DESKTOP-LDMFB6L 
+4 de dezembro de 2025  23:04:57

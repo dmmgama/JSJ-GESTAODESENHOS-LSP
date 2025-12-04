@@ -1,9 +1,0 @@
-[theme]
-primaryColor = "#007AFF"        # Azul Apple para ações principais
-backgroundColor = "#FFFFFF"      # Fundo branco limpo
-secondaryBackgroundColor = "#F5F5F7"  # Cinza muito claro (cards)
-textColor = "#1D1D1F"           # Preto quase absoluto
-font = "Inter, -apple-system, BlinkMacSystemFont, sans-serif"
-
-[server]
-headless = true

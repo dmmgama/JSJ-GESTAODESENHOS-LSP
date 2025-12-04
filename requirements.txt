@@ -3,3 +3,11 @@ pandas
 openpyxl
 sqlalchemy
 unidecode
+streamlit-aggrid
+streamlit-extras
+streamlit-option-menu
+streamlit-card
+streamlit-echarts
+streamlit-lottie
+plotly
+hydralit-components

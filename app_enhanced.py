@@ -39,116 +39,144 @@ ESTADO_CONFIG = {
 # CUSTOM CSS THEME
 # ========================================
 def load_custom_css():
-    """Inject custom CSS for modern UI"""
+    """Inject custom CSS for compact, professional UI"""
     st.markdown("""
     <style>
-        /* Main app background with gradient */
+        /* Main app - subtle background */
         .stApp {
-            background: linear-gradient(135deg, #667eea10 0%, #764ba220 100%);
+            background-color: #f8f9fa;
         }
         
-        /* Sidebar styling */
+        /* Sidebar - darker with good contrast */
         [data-testid="stSidebar"] {
-            background: linear-gradient(180deg, #2c3e50 0%, #34495e 100%);
+            background: linear-gradient(180deg, #1a1f2e 0%, #2c3e50 100%);
         }
         
-        [data-testid="stSidebar"] .stMarkdown {
-            color: white;
+        [data-testid="stSidebar"] * {
+            color: #ffffff !important;
         }
         
-        /* Metric cards */
+        /* Compact metric cards */
         [data-testid="stMetricValue"] {
-            font-size: 32px;
-            font-weight: bold;
-            color: #1f77b4;
+            font-size: 20px !important;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        
+        [data-testid="stMetricLabel"] {
+            font-size: 12px !important;
         }
         
         [data-testid="stMetricDelta"] {
-            font-size: 18px;
+            font-size: 13px !important;
         }
         
-        /* Buttons */
+        div[data-testid="metric-container"] {
+            background-color: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 8px 12px !important;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+        
+        /* Compact buttons */
         .stButton>button {
-            border-radius: 8px;
-            font-weight: 600;
-            border: 2px solid transparent;
-            transition: all 0.3s ease;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 6px 16px !important;
+            font-size: 14px !important;
+            border-radius: 6px;
+            font-weight: 500;
+            transition: all 0.2s ease;
         }
         
         .stButton>button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
         }
         
-        /* Primary button */
         .stButton>button[kind="primary"] {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: #667eea;
             color: white;
             border: none;
         }
         
-        /* Headers */
-        h1, h2, h3 {
-            color: #2c3e50;
-            font-weight: 700;
-            text-shadow: 1px 1px 2px rgba(0,0,0,0.05);
-        }
-        
-        h1 {
-            border-bottom: 4px solid #667eea;
-            padding-bottom: 10px;
-        }
-        
-        /* Dataframe/Tables */
-        .dataframe {
-            border-radius: 10px;
-            overflow: hidden;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-        
-        /* Cards */
-        .css-1r6slb0 {
+        .stButton>button[kind="secondary"] {
             background: white;
-            border-radius: 10px;
-            padding: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            color: #667eea;
+            border: 1px solid #667eea;
         }
         
-        /* Info/Warning/Success boxes */
+        /* Compact headers */
+        h1 {
+            font-size: 26px !important;
+            color: #1a1f2e;
+            margin-bottom: 16px !important;
+            padding-bottom: 8px;
+            border-bottom: 3px solid #667eea;
+        }
+        
+        h2 {
+            font-size: 20px !important;
+            color: #2c3e50;
+            margin-top: 16px !important;
+            margin-bottom: 12px !important;
+        }
+        
+        h3 {
+            font-size: 16px !important;
+            color: #34495e;
+            margin-top: 12px !important;
+            margin-bottom: 8px !important;
+        }
+        
+        /* Reduce spacing */
+        .block-container {
+            padding-top: 2rem !important;
+            padding-bottom: 1rem !important;
+        }
+        
+        /* Tables */
+        .dataframe {
+            font-size: 13px !important;
+        }
+        
+        /* Compact selectbox and inputs */
+        .stSelectbox, .stTextInput {
+            margin-bottom: 8px !important;
+        }
+        
+        .stSelectbox label, .stTextInput label {
+            font-size: 13px !important;
+            margin-bottom: 4px !important;
+        }
+        
+        /* Alert boxes */
         .stAlert {
-            border-radius: 8px;
-            border-left: 5px solid;
+            padding: 8px 12px !important;
+            font-size: 13px !important;
+            border-radius: 6px;
         }
         
-        /* Expanders */
+        /* Info boxes more compact */
+        .stInfo, .stWarning, .stSuccess, .stError {
+            padding: 10px 14px !important;
+            font-size: 13px !important;
+        }
+        
+        /* Make expanders more subtle */
         .streamlit-expanderHeader {
             background-color: #f0f2f6;
-            border-radius: 8px;
-            font-weight: 600;
+            font-size: 14px !important;
+            padding: 8px 12px !important;
         }
         
-        /* Tabs */
-        .stTabs [data-baseweb="tab-list"] {
-            gap: 8px;
+        /* Sidebar elements smaller */
+        [data-testid="stSidebar"] .stButton>button {
+            font-size: 13px !important;
+            padding: 8px 12px !important;
         }
         
-        .stTabs [data-baseweb="tab"] {
-            border-radius: 8px 8px 0 0;
-            padding: 12px 24px;
-            font-weight: 600;
-        }
-        
-        /* Input fields */
-        .stTextInput input, .stSelectbox select, .stTextArea textarea {
-            border-radius: 8px;
-            border: 2px solid #e0e0e0;
-            transition: border-color 0.3s;
-        }
-        
-        .stTextInput input:focus, .stSelectbox select:focus, .stTextArea textarea:focus {
-            border-color: #667eea;
-            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+        [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
+            font-size: 16px !important;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -185,19 +213,20 @@ with st.sidebar:
         options=["Dashboard", "Gestão de Desenhos", "Histórico", "Configurações"],
         icons=["speedometer2", "pencil-square", "clock-history", "gear"],
         menu_icon="cast",
-        default_index=0,
+        default_index=1,  # Start on "Gestão de Desenhos" (main feature)
         styles={
             "container": {"padding": "0!important", "background-color": "transparent"},
-            "icon": {"color": "#ffffff", "font-size": "20px"}, 
+            "icon": {"color": "#ffffff", "font-size": "18px"}, 
             "nav-link": {
-                "font-size": "16px",
+                "font-size": "14px",
                 "text-align": "left",
-                "margin": "5px",
+                "margin": "3px",
                 "color": "#ffffff",
-                "border-radius": "8px",
+                "border-radius": "6px",
+                "padding": "8px 12px",
             },
             "nav-link-selected": {
-                "background": "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                "background": "#667eea",
                 "font-weight": "600",
             },
         }
@@ -273,7 +302,7 @@ if selected_page == "Dashboard":
                 hole=0.4
             )
             fig_estado.update_traces(textposition='inside', textinfo='percent+label')
-            fig_estado.update_layout(height=400)
+            fig_estado.update_layout(height=280, margin=dict(t=40, b=20, l=20, r=20))
             st.plotly_chart(fig_estado, use_container_width=True)
         
         with col_chart2:
@@ -289,7 +318,7 @@ if selected_page == "Dashboard":
                     color=tipo_counts.values,
                     color_continuous_scale='Blues'
                 )
-                fig_tipos.update_layout(height=400, showlegend=False)
+                fig_tipos.update_layout(height=280, showlegend=False, margin=dict(t=40, b=20, l=20, r=20))
                 st.plotly_chart(fig_tipos, use_container_width=True)
         
         st.markdown("---")
@@ -309,7 +338,7 @@ if selected_page == "Dashboard":
                     color=elemento_counts.values,
                     color_continuous_scale='Greens'
                 )
-                fig_elementos.update_layout(height=400, showlegend=False)
+                fig_elementos.update_layout(height=280, showlegend=False, margin=dict(t=40, b=20, l=20, r=20))
                 st.plotly_chart(fig_elementos, use_container_width=True)
         
         with col_chart4:
@@ -324,7 +353,7 @@ if selected_page == "Dashboard":
                     color=dwg_counts.values,
                     color_continuous_scale='Oranges'
                 )
-                fig_dwg.update_layout(height=400, showlegend=False)
+                fig_dwg.update_layout(height=280, showlegend=False, margin=dict(t=40, b=20, l=20, r=20))
                 st.plotly_chart(fig_dwg, use_container_width=True)
         
         # Timeline of revisions
@@ -355,7 +384,7 @@ if selected_page == "Dashboard":
                         markers=True
                     )
                     fig_timeline.update_traces(line_color='#667eea', line_width=3)
-                    fig_timeline.update_layout(height=350)
+                    fig_timeline.update_layout(height=250, margin=dict(t=40, b=20, l=20, r=20))
                     st.plotly_chart(fig_timeline, use_container_width=True)
     else:
         st.warning("⚠️ Nenhum desenho na base de dados. Importe dados primeiro.")
@@ -399,11 +428,7 @@ elif selected_page == "Gestão de Desenhos":
         st.markdown("---")
         
         # Filters
-        colored_header(
-            label="Filtros",
-            description="Filtre os desenhos por estado, tipo, elemento, etc.",
-            color_name="violet-70"
-        )
+        st.markdown("### 🔍 Filtros")
         
         # Estado filter buttons
         estado_col1, estado_col2, estado_col3, estado_col4, estado_col5 = st.columns(5)
@@ -490,11 +515,7 @@ elif selected_page == "Gestão de Desenhos":
         st.markdown("---")
         
         # AgGrid Table
-        colored_header(
-            label="Tabela Interativa de Desenhos",
-            description="Clique, filtre, ordene e exporte os dados",
-            color_name="blue-70"
-        )
+        st.markdown("### 📋 Tabela de Desenhos")
         
         # Prepare columns for AgGrid
         display_columns = [
@@ -512,7 +533,7 @@ elif selected_page == "Gestão de Desenhos":
         
         # Build AgGrid options
         gb = GridOptionsBuilder.from_dataframe(aggrid_df)
-        gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=20)
+        gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=50)
         gb.configure_side_bar()
         gb.configure_default_column(filterable=True, sorteable=True, resizable=True)
         gb.configure_selection('single', use_checkbox=True, pre_selected_rows=[])

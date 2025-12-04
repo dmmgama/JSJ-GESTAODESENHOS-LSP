@@ -52,8 +52,23 @@ def load_custom_css():
             background: linear-gradient(180deg, #1a1f2e 0%, #2c3e50 100%);
         }
         
-        [data-testid="stSidebar"] * {
+        /* Sidebar text colors - specific selectors */
+        [data-testid="stSidebar"] .stMarkdown,
+        [data-testid="stSidebar"] h1,
+        [data-testid="stSidebar"] h2,
+        [data-testid="stSidebar"] h3,
+        [data-testid="stSidebar"] p,
+        [data-testid="stSidebar"] label,
+        [data-testid="stSidebar"] span {
             color: #ffffff !important;
+        }
+        
+        /* Keep inputs/selects readable */
+        [data-testid="stSidebar"] input,
+        [data-testid="stSidebar"] select,
+        [data-testid="stSidebar"] textarea {
+            color: #1a1f2e !important;
+            background-color: #ffffff !important;
         }
         
         /* Compact metric cards */

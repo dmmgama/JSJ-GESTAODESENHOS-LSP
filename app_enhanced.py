@@ -1,0 +1,900 @@
+"""
+Streamlit app - UI for JSJ Drawing Management LPP Sync (Enhanced Version).
+"""
+import streamlit as st
+import pandas as pd
+from pathlib import Path
+from datetime import datetime, date
+
+# Enhanced UI components
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
+from streamlit_option_menu import option_menu
+from streamlit_extras.metric_cards import style_metric_cards
+from streamlit_extras.colored_header import colored_header
+import plotly.express as px
+import plotly.graph_objects as go
+
+from db import (
+    get_connection, criar_tabelas, get_all_desenhos, get_revisoes_by_desenho_id, 
+    get_desenho_by_layout, get_dwg_list, delete_all_desenhos, delete_desenhos_by_dwg, 
+    delete_desenhos_by_tipo, delete_desenhos_by_elemento, delete_desenho_by_layout, 
+    get_db_stats, get_all_desenhos_with_revisoes, get_unique_tipos, get_unique_elementos, 
+    get_all_layout_names, update_estado_interno, update_estado_e_comentario,
+    get_historico_comentarios, get_desenhos_by_estado, get_desenhos_em_atraso,
+    get_desenho_by_id, get_stats_by_estado, ESTADOS_VALIDOS,
+    get_unique_revision_dates, get_desenhos_at_date
+)
+from json_importer import import_all_json
+from csv_importer import import_all_csv, import_single_csv
+from lpp_builder import build_lpp_from_db
+
+# Estado interno colors and labels
+ESTADO_CONFIG = {
+    'projeto': {'label': '📋 Projeto', 'color': '#6c757d', 'bg': '#f8f9fa'},
+    'needs_revision': {'label': '⚠️ Precisa Revisão', 'color': '#dc3545', 'bg': '#fff3cd'},
+    'built': {'label': '✅ Construído', 'color': '#28a745', 'bg': '#d4edda'}
+}
+
+# ========================================
+# CUSTOM CSS THEME
+# ========================================
+def load_custom_css():
+    """Inject custom CSS for modern UI"""
+    st.markdown("""
+    <style>
+        /* Main app background with gradient */
+        .stApp {
+            background: linear-gradient(135deg, #667eea10 0%, #764ba220 100%);
+        }
+        
+        /* Sidebar styling */
+        [data-testid="stSidebar"] {
+            background: linear-gradient(180deg, #2c3e50 0%, #34495e 100%);
+        }
+        
+        [data-testid="stSidebar"] .stMarkdown {
+            color: white;
+        }
+        
+        /* Metric cards */
+        [data-testid="stMetricValue"] {
+            font-size: 32px;
+            font-weight: bold;
+            color: #1f77b4;
+        }
+        
+        [data-testid="stMetricDelta"] {
+            font-size: 18px;
+        }
+        
+        /* Buttons */
+        .stButton>button {
+            border-radius: 8px;
+            font-weight: 600;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .stButton>button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        
+        /* Primary button */
+        .stButton>button[kind="primary"] {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+        }
+        
+        /* Headers */
+        h1, h2, h3 {
+            color: #2c3e50;
+            font-weight: 700;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.05);
+        }
+        
+        h1 {
+            border-bottom: 4px solid #667eea;
+            padding-bottom: 10px;
+        }
+        
+        /* Dataframe/Tables */
+        .dataframe {
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        /* Cards */
+        .css-1r6slb0 {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        /* Info/Warning/Success boxes */
+        .stAlert {
+            border-radius: 8px;
+            border-left: 5px solid;
+        }
+        
+        /* Expanders */
+        .streamlit-expanderHeader {
+            background-color: #f0f2f6;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+        
+        /* Tabs */
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 8px;
+        }
+        
+        .stTabs [data-baseweb="tab"] {
+            border-radius: 8px 8px 0 0;
+            padding: 12px 24px;
+            font-weight: 600;
+        }
+        
+        /* Input fields */
+        .stTextInput input, .stSelectbox select, .stTextArea textarea {
+            border-radius: 8px;
+            border: 2px solid #e0e0e0;
+            transition: border-color 0.3s;
+        }
+        
+        .stTextInput input:focus, .stSelectbox select:focus, .stTextArea textarea:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+# Page config
+st.set_page_config(
+    page_title="JSJ - LPP Sync Enhanced",
+    page_icon="📐",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Load custom CSS
+load_custom_css()
+
+# Initialize database
+def init_db():
+    """Initialize database - create tables if needed."""
+    conn = get_connection()
+    criar_tabelas(conn)
+    conn.close()
+
+init_db()
+
+# ========================================
+# SIDEBAR NAVIGATION
+# ========================================
+with st.sidebar:
+    st.image("https://via.placeholder.com/150x50/667eea/ffffff?text=JSJ", use_container_width=True)
+    st.markdown("## 🔧 Navegação")
+    
+    selected_page = option_menu(
+        menu_title=None,
+        options=["Dashboard", "Gestão de Desenhos", "Histórico", "Configurações"],
+        icons=["speedometer2", "pencil-square", "clock-history", "gear"],
+        menu_icon="cast",
+        default_index=0,
+        styles={
+            "container": {"padding": "0!important", "background-color": "transparent"},
+            "icon": {"color": "#ffffff", "font-size": "20px"}, 
+            "nav-link": {
+                "font-size": "16px",
+                "text-align": "left",
+                "margin": "5px",
+                "color": "#ffffff",
+                "border-radius": "8px",
+            },
+            "nav-link-selected": {
+                "background": "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                "font-weight": "600",
+            },
+        }
+    )
+    
+    st.markdown("---")
+    
+    # Quick stats in sidebar
+    conn = get_connection()
+    db_stats = get_db_stats(conn)
+    conn.close()
+    
+    st.markdown(f"### 📊 Quick Stats")
+    st.metric("Total Desenhos", db_stats['total_desenhos'], label_visibility="visible")
+    st.metric("DWG Files", db_stats['total_dwgs'], label_visibility="visible")
+
+# ========================================
+# PAGE: DASHBOARD
+# ========================================
+if selected_page == "Dashboard":
+    st.title("📊 Dashboard - Visão Geral")
+    
+    # Load data
+    conn = get_connection()
+    desenhos = get_all_desenhos(conn)
+    estado_stats = get_stats_by_estado(conn)
+    conn.close()
+    
+    if desenhos:
+        df = pd.DataFrame(desenhos)
+        if 'estado_interno' not in df.columns:
+            df['estado_interno'] = 'projeto'
+        df['estado_interno'] = df['estado_interno'].fillna('projeto')
+        
+        # Top metrics with styled cards
+        col1, col2, col3, col4, col5 = st.columns(5)
+        
+        with col1:
+            st.metric("Total Desenhos", len(df), delta=None)
+        with col2:
+            st.metric("📋 Projeto", estado_stats.get('projeto', 0))
+        with col3:
+            st.metric("⚠️ Precisa Revisão", estado_stats.get('needs_revision', 0))
+        with col4:
+            st.metric("✅ Construído", estado_stats.get('built', 0))
+        with col5:
+            em_atraso = estado_stats.get('em_atraso', 0)
+            st.metric("🚨 Em Atraso", em_atraso, delta=f"-{em_atraso}" if em_atraso > 0 else None)
+        
+        style_metric_cards()
+        
+        st.markdown("---")
+        
+        # Charts row 1
+        colored_header(
+            label="Distribuição de Estados e Tipos",
+            description="Análise visual dos desenhos por estado e tipo",
+            color_name="blue-70"
+        )
+        
+        col_chart1, col_chart2 = st.columns(2)
+        
+        with col_chart1:
+            # Pie chart - Distribution by Estado
+            estado_counts = df['estado_interno'].value_counts()
+            estado_labels = [ESTADO_CONFIG.get(e, {}).get('label', e) for e in estado_counts.index]
+            
+            fig_estado = px.pie(
+                values=estado_counts.values,
+                names=estado_labels,
+                title="Distribuição por Estado Interno",
+                color_discrete_sequence=px.colors.qualitative.Set3,
+                hole=0.4
+            )
+            fig_estado.update_traces(textposition='inside', textinfo='percent+label')
+            fig_estado.update_layout(height=400)
+            st.plotly_chart(fig_estado, use_container_width=True)
+        
+        with col_chart2:
+            # Bar chart - Top 10 Tipos
+            if 'tipo_display' in df.columns:
+                tipo_counts = df['tipo_display'].value_counts().head(10)
+                fig_tipos = px.bar(
+                    x=tipo_counts.values,
+                    y=tipo_counts.index,
+                    orientation='h',
+                    title="Top 10 Tipos de Desenho",
+                    labels={'x': 'Quantidade', 'y': 'Tipo'},
+                    color=tipo_counts.values,
+                    color_continuous_scale='Blues'
+                )
+                fig_tipos.update_layout(height=400, showlegend=False)
+                st.plotly_chart(fig_tipos, use_container_width=True)
+        
+        st.markdown("---")
+        
+        # Charts row 2
+        col_chart3, col_chart4 = st.columns(2)
+        
+        with col_chart3:
+            # Bar chart - Top 10 Elementos
+            if 'elemento_key' in df.columns:
+                elemento_counts = df['elemento_key'].value_counts().head(10)
+                fig_elementos = px.bar(
+                    x=elemento_counts.index,
+                    y=elemento_counts.values,
+                    title="Top 10 Elementos",
+                    labels={'x': 'Elemento', 'y': 'Quantidade'},
+                    color=elemento_counts.values,
+                    color_continuous_scale='Greens'
+                )
+                fig_elementos.update_layout(height=400, showlegend=False)
+                st.plotly_chart(fig_elementos, use_container_width=True)
+        
+        with col_chart4:
+            # Distribution by DWG
+            if 'dwg_name' in df.columns:
+                dwg_counts = df['dwg_name'].value_counts()
+                fig_dwg = px.bar(
+                    x=dwg_counts.index,
+                    y=dwg_counts.values,
+                    title="Desenhos por DWG",
+                    labels={'x': 'DWG', 'y': 'Quantidade'},
+                    color=dwg_counts.values,
+                    color_continuous_scale='Oranges'
+                )
+                fig_dwg.update_layout(height=400, showlegend=False)
+                st.plotly_chart(fig_dwg, use_container_width=True)
+        
+        # Timeline of revisions
+        st.markdown("---")
+        colored_header(
+            label="Timeline de Revisões",
+            description="Histórico de revisões ao longo do tempo",
+            color_name="green-70"
+        )
+        
+        if 'r_data' in df.columns and df['r_data'].notna().any():
+            # Filter valid dates
+            df_timeline = df[df['r_data'].notna() & (df['r_data'] != '')].copy()
+            if not df_timeline.empty:
+                df_timeline['r_data'] = pd.to_datetime(df_timeline['r_data'], errors='coerce')
+                df_timeline = df_timeline.dropna(subset=['r_data'])
+                
+                if not df_timeline.empty:
+                    # Count revisions by date
+                    rev_timeline = df_timeline.groupby(df_timeline['r_data'].dt.date).size().reset_index()
+                    rev_timeline.columns = ['Data', 'Nº Revisões']
+                    
+                    fig_timeline = px.line(
+                        rev_timeline,
+                        x='Data',
+                        y='Nº Revisões',
+                        title="Revisões ao Longo do Tempo",
+                        markers=True
+                    )
+                    fig_timeline.update_traces(line_color='#667eea', line_width=3)
+                    fig_timeline.update_layout(height=350)
+                    st.plotly_chart(fig_timeline, use_container_width=True)
+    else:
+        st.warning("⚠️ Nenhum desenho na base de dados. Importe dados primeiro.")
+
+# ========================================
+# PAGE: GESTÃO DE DESENHOS
+# ========================================
+elif selected_page == "Gestão de Desenhos":
+    st.title("📐 Gestão de Desenhos")
+    
+    # Load data
+    conn = get_connection()
+    desenhos = get_all_desenhos(conn)
+    estado_stats = get_stats_by_estado(conn)
+    conn.close()
+    
+    if not desenhos:
+        st.warning("⚠️ Nenhum desenho na base de dados. Importe dados primeiro.")
+    else:
+        df = pd.DataFrame(desenhos)
+        if 'estado_interno' not in df.columns:
+            df['estado_interno'] = 'projeto'
+        df['estado_interno'] = df['estado_interno'].fillna('projeto')
+        
+        # Quick stats
+        col1, col2, col3, col4, col5 = st.columns(5)
+        with col1:
+            st.metric("Total", len(df))
+        with col2:
+            st.metric("📋 Projeto", estado_stats.get('projeto', 0))
+        with col3:
+            st.metric("⚠️ Precisa Revisão", estado_stats.get('needs_revision', 0))
+        with col4:
+            st.metric("✅ Construído", estado_stats.get('built', 0))
+        with col5:
+            em_atraso = estado_stats.get('em_atraso', 0)
+            st.metric("🚨 Em Atraso", em_atraso)
+        
+        style_metric_cards()
+        
+        st.markdown("---")
+        
+        # Filters
+        colored_header(
+            label="Filtros",
+            description="Filtre os desenhos por estado, tipo, elemento, etc.",
+            color_name="violet-70"
+        )
+        
+        # Estado filter buttons
+        estado_col1, estado_col2, estado_col3, estado_col4, estado_col5 = st.columns(5)
+        
+        if 'estado_filter' not in st.session_state:
+            st.session_state.estado_filter = 'Todos'
+        
+        with estado_col1:
+            if st.button("🔄 Todos", use_container_width=True, 
+                         type="primary" if st.session_state.estado_filter == 'Todos' else "secondary"):
+                st.session_state.estado_filter = 'Todos'
+                st.rerun()
+        with estado_col2:
+            if st.button("📋 Projeto", use_container_width=True,
+                         type="primary" if st.session_state.estado_filter == 'projeto' else "secondary"):
+                st.session_state.estado_filter = 'projeto'
+                st.rerun()
+        with estado_col3:
+            if st.button("⚠️ Precisa Revisão", use_container_width=True,
+                         type="primary" if st.session_state.estado_filter == 'needs_revision' else "secondary"):
+                st.session_state.estado_filter = 'needs_revision'
+                st.rerun()
+        with estado_col4:
+            if st.button("✅ Construído", use_container_width=True,
+                         type="primary" if st.session_state.estado_filter == 'built' else "secondary"):
+                st.session_state.estado_filter = 'built'
+                st.rerun()
+        with estado_col5:
+            if st.button("🚨 Em Atraso", use_container_width=True,
+                         type="primary" if st.session_state.estado_filter == 'em_atraso' else "secondary"):
+                st.session_state.estado_filter = 'em_atraso'
+                st.rerun()
+        
+        # Other filters
+        col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+        
+        with col_f1:
+            tipo_options = ["Todos"] + sorted(df['tipo_display'].dropna().unique().tolist())
+            tipo_filter = st.selectbox("TIPO", tipo_options)
+        
+        with col_f2:
+            elemento_options = ["Todos"] + sorted(df['elemento_key'].dropna().unique().tolist())
+            elemento_filter = st.selectbox("ELEMENTO", elemento_options)
+        
+        with col_f3:
+            r_options = ["Todos"] + sorted(df['r'].dropna().unique().tolist())
+            r_filter = st.selectbox("Revisão (R)", r_options)
+        
+        with col_f4:
+            search_text = st.text_input("🔎 Procurar", "")
+        
+        # Apply filters
+        filtered_df = df.copy()
+        
+        if st.session_state.estado_filter == 'em_atraso':
+            today = datetime.now().strftime('%Y-%m-%d')
+            filtered_df = filtered_df[
+                (filtered_df['estado_interno'] == 'needs_revision') & 
+                (filtered_df['data_limite'].notna()) & 
+                (filtered_df['data_limite'] != '') &
+                (filtered_df['data_limite'] < today)
+            ]
+        elif st.session_state.estado_filter != 'Todos':
+            filtered_df = filtered_df[filtered_df['estado_interno'] == st.session_state.estado_filter]
+        
+        if tipo_filter != "Todos":
+            filtered_df = filtered_df[filtered_df['tipo_display'] == tipo_filter]
+        
+        if elemento_filter != "Todos":
+            filtered_df = filtered_df[filtered_df['elemento_key'] == elemento_filter]
+        
+        if r_filter != "Todos":
+            filtered_df = filtered_df[filtered_df['r'] == r_filter]
+        
+        if search_text:
+            mask = (
+                filtered_df['des_num'].str.contains(search_text, case=False, na=False) |
+                filtered_df['layout_name'].str.contains(search_text, case=False, na=False)
+            )
+            filtered_df = filtered_df[mask]
+        
+        st.info(f"**Resultados:** {len(filtered_df)} desenhos encontrados")
+        
+        st.markdown("---")
+        
+        # AgGrid Table
+        colored_header(
+            label="Tabela Interativa de Desenhos",
+            description="Clique, filtre, ordene e exporte os dados",
+            color_name="blue-70"
+        )
+        
+        # Prepare columns for AgGrid
+        display_columns = [
+            'des_num', 'layout_name', 'tipo_display', 'elemento', 'titulo',
+            'r', 'r_data', 'estado_interno', 'comentario', 'data_limite', 'dwg_name'
+        ]
+        
+        aggrid_df = filtered_df[[col for col in display_columns if col in filtered_df.columns]].copy()
+        
+        # Format estado_interno for display
+        if 'estado_interno' in aggrid_df.columns:
+            aggrid_df['estado_interno'] = aggrid_df['estado_interno'].apply(
+                lambda x: ESTADO_CONFIG.get(x, ESTADO_CONFIG['projeto'])['label']
+            )
+        
+        # Build AgGrid options
+        gb = GridOptionsBuilder.from_dataframe(aggrid_df)
+        gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=20)
+        gb.configure_side_bar()
+        gb.configure_default_column(filterable=True, sorteable=True, resizable=True)
+        gb.configure_selection('single', use_checkbox=True, pre_selected_rows=[])
+        
+        # Special column configurations
+        gb.configure_column("des_num", header_name="Nº Desenho", width=120, pinned='left')
+        gb.configure_column("layout_name", header_name="Layout", width=200)
+        gb.configure_column("tipo_display", header_name="Tipo", width=100)
+        gb.configure_column("elemento", header_name="Elemento", width=150)
+        gb.configure_column("titulo", header_name="Título", width=250)
+        gb.configure_column("r", header_name="Rev", width=80)
+        gb.configure_column("estado_interno", header_name="Estado", width=150)
+        gb.configure_column("comentario", header_name="Comentário", width=200, editable=True)
+        
+        gridOptions = gb.build()
+        
+        # Render AgGrid
+        grid_response = AgGrid(
+            aggrid_df,
+            gridOptions=gridOptions,
+            update_mode=GridUpdateMode.MODEL_CHANGED | GridUpdateMode.SELECTION_CHANGED,
+            fit_columns_on_grid_load=False,
+            theme='streamlit',  # 'streamlit', 'alpine', 'balham', 'material'
+            height=500,
+            allow_unsafe_jscode=True,
+        )
+        
+        # Handle selection
+        selected_rows = grid_response['selected_rows']
+        if selected_rows is not None and len(selected_rows) > 0:
+            st.markdown("---")
+            st.subheader(f"📋 Detalhes do Desenho Selecionado")
+            selected = selected_rows.iloc[0] if isinstance(selected_rows, pd.DataFrame) else selected_rows[0]
+            
+            # Find original row in df to get ID
+            layout = selected.get('layout_name', '')
+            original_row = filtered_df[filtered_df['layout_name'] == layout]
+            
+            if not original_row.empty:
+                desenho_id = original_row.iloc[0].get('id')
+                
+                if desenho_id:
+                    conn = get_connection()
+                    desenho = get_desenho_by_id(conn, desenho_id)
+                    revisoes = get_revisoes_by_desenho_id(conn, desenho_id)
+                    conn.close()
+                    
+                    if desenho:
+                        col_info, col_edit = st.columns([1, 1])
+                        
+                        with col_info:
+                            st.markdown("**📐 Informação:**")
+                            st.text(f"Layout: {desenho.get('layout_name', '-')}")
+                            st.text(f"DES_NUM: {desenho.get('des_num', '-')}")
+                            st.text(f"Tipo: {desenho.get('tipo_display', '-')}")
+                            st.text(f"Elemento: {desenho.get('elemento_key', '-')}")
+                            st.text(f"Título: {desenho.get('titulo', '-')}")
+                            st.text(f"Revisão: {desenho.get('r', '-')}")
+                            st.text(f"DWG: {desenho.get('dwg_name', '-')}")
+                        
+                        with col_edit:
+                            st.markdown("**✏️ Editar Estado:**")
+                            
+                            estado_atual = desenho.get('estado_interno') or 'projeto'
+                            estado_options = ['projeto', 'needs_revision', 'built']
+                            estado_labels = {e: ESTADO_CONFIG[e]['label'] for e in estado_options}
+                            
+                            novo_estado = st.selectbox(
+                                "Estado:",
+                                estado_options,
+                                index=estado_options.index(estado_atual),
+                                format_func=lambda x: estado_labels[x],
+                                key=f"edit_estado_{desenho_id}"
+                            )
+                            
+                            novo_comentario = st.text_area(
+                                "Comentário:",
+                                value=desenho.get('comentario') or '',
+                                height=100,
+                                key=f"edit_comentario_{desenho_id}"
+                            )
+                            
+                            if st.button("💾 Guardar", type="primary", use_container_width=True):
+                                conn = get_connection()
+                                success = update_estado_e_comentario(
+                                    conn, desenho_id,
+                                    estado=novo_estado,
+                                    comentario=novo_comentario,
+                                    data_limite=None,
+                                    responsavel=None,
+                                    autor="Streamlit User"
+                                )
+                                conn.close()
+                                if success:
+                                    st.success("✅ Guardado!")
+                                    st.rerun()
+        
+        # Export button
+        st.markdown("---")
+        csv_export = aggrid_df.to_csv(sep=';', index=False).encode('utf-8-sig')
+        st.download_button(
+            label="📥 Download CSV Filtrado",
+            data=csv_export,
+            file_name=f"desenhos_filtrados_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv"
+        )
+
+# ========================================
+# PAGE: HISTÓRICO
+# ========================================
+elif selected_page == "Histórico":
+    st.title("📜 Histórico de Revisões")
+    
+    conn = get_connection()
+    datas_unicas = get_unique_revision_dates(conn)
+    conn.close()
+    
+    if not datas_unicas:
+        st.warning("⚠️ Nenhuma data de revisão encontrada na base de dados.")
+    else:
+        col_date, col_info = st.columns([2, 3])
+        
+        with col_date:
+            data_selecionada = st.selectbox(
+                "📅 Selecione uma data:",
+                datas_unicas,
+                key="historico_data"
+            )
+        
+        with col_info:
+            st.info(f"💡 {len(datas_unicas)} datas com revisões registadas")
+        
+        if data_selecionada:
+            st.markdown("---")
+            colored_header(
+                label=f"Estado em {data_selecionada}",
+                description=f"Desenhos registados nesta data",
+                color_name="green-70"
+            )
+            
+            conn = get_connection()
+            desenhos_na_data = get_desenhos_at_date(conn, data_selecionada)
+            conn.close()
+            
+            if not desenhos_na_data:
+                st.warning(f"⚠️ Nenhum desenho encontrado para {data_selecionada}")
+            else:
+                df_hist = pd.DataFrame(desenhos_na_data)
+                
+                # Stats
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total Desenhos", len(df_hist))
+                with col2:
+                    tipos_unicos = df_hist['tipo_display'].nunique() if 'tipo_display' in df_hist.columns else 0
+                    st.metric("Tipos Únicos", tipos_unicos)
+                with col3:
+                    revisoes = df_hist['r'].value_counts().to_dict() if 'r' in df_hist.columns else {}
+                    rev_info = ", ".join([f"{k}:{v}" for k, v in revisoes.items() if k and k != '-'])
+                    st.metric("Revisões", rev_info if rev_info else "-")
+                
+                style_metric_cards()
+                
+                st.markdown("---")
+                
+                # Display with AgGrid
+                hist_columns = ['des_num', 'layout_name', 'tipo_display', 'elemento', 'titulo', 'r', 'r_data', 'r_desc', 'dwg_name']
+                hist_df = df_hist[[c for c in hist_columns if c in df_hist.columns]]
+                
+                gb_hist = GridOptionsBuilder.from_dataframe(hist_df)
+                gb_hist.configure_pagination(paginationPageSize=20)
+                gb_hist.configure_side_bar()
+                gb_hist.configure_default_column(filterable=True, sorteable=True)
+                
+                AgGrid(
+                    hist_df,
+                    gridOptions=gb_hist.build(),
+                    height=400,
+                    theme='streamlit'
+                )
+                
+                # Export
+                csv_hist = hist_df.to_csv(sep=';', index=False).encode('utf-8-sig')
+                st.download_button(
+                    label=f"📥 Download CSV ({data_selecionada})",
+                    data=csv_hist,
+                    file_name=f"historico_{data_selecionada.replace('-', '_')}.csv",
+                    mime="text/csv"
+                )
+
+# ========================================
+# PAGE: CONFIGURAÇÕES
+# ========================================
+elif selected_page == "Configurações":
+    st.title("⚙️ Configurações e Operações")
+    
+    tab1, tab2, tab3 = st.tabs(["📥 Importar Dados", "📊 Gerar LPP", "🗑️ Gestão DB"])
+    
+    # TAB 1: Import
+    with tab1:
+        colored_header(
+            label="Importar Dados",
+            description="Importe ficheiros JSON ou CSV para a base de dados",
+            color_name="blue-70"
+        )
+        
+        col_imp1, col_imp2 = st.columns(2)
+        
+        with col_imp1:
+            st.subheader("JSON Files")
+            if st.button("📥 Importar JSON", use_container_width=True, type="primary"):
+                with st.spinner("Importando JSON..."):
+                    try:
+                        conn = get_connection()
+                        stats = import_all_json("data/json_in", conn)
+                        conn.close()
+                        st.success(
+                            f"✅ Importação JSON concluída!\n\n"
+                            f"Ficheiros: {stats['files_processed']}\n"
+                            f"Desenhos: {stats['desenhos_imported']}"
+                        )
+                    except Exception as e:
+                        st.error(f"❌ Erro: {e}")
+        
+        with col_imp2:
+            st.subheader("CSV Files")
+            if st.button("📄 Importar CSV", use_container_width=True, type="primary"):
+                with st.spinner("Importando CSV..."):
+                    try:
+                        conn = get_connection()
+                        stats = import_all_csv("data/csv_in", conn)
+                        conn.close()
+                        st.success(
+                            f"✅ Importação CSV concluída!\n\n"
+                            f"Ficheiros: {stats['files_processed']}\n"
+                            f"Desenhos: {stats['desenhos_imported']}"
+                        )
+                    except Exception as e:
+                        st.error(f"❌ Erro: {e}")
+        
+        st.markdown("---")
+        
+        # Upload CSV directly
+        uploaded_csv = st.file_uploader("📤 Ou faça upload direto de CSV", type=['csv'])
+        
+        if uploaded_csv is not None:
+            if st.button("➕ Importar Ficheiro", type="primary", use_container_width=True):
+                temp_path = Path("data/csv_in") / uploaded_csv.name
+                temp_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                with open(temp_path, 'wb') as f:
+                    f.write(uploaded_csv.getbuffer())
+                
+                with st.spinner(f"Importando {uploaded_csv.name}..."):
+                    try:
+                        conn = get_connection()
+                        stats = import_single_csv(str(temp_path), conn)
+                        conn.close()
+                        st.success(f"✅ Importado! Desenhos: {stats['desenhos_imported']}")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Erro: {e}")
+    
+    # TAB 2: Generate LPP
+    with tab2:
+        colored_header(
+            label="Gerar LPP",
+            description="Gere ficheiro Excel LPP a partir da base de dados",
+            color_name="green-70"
+        )
+        
+        uploaded_template = st.file_uploader("📋 Upload Template LPP (Excel)", type=['xlsx', 'xls'])
+        
+        if uploaded_template is not None:
+            template_path = Path("data") / "LPP_TEMPLATE.xlsx"
+            template_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(template_path, 'wb') as f:
+                f.write(uploaded_template.getbuffer())
+            st.success("✅ Template carregado!")
+        
+        template_path = Path("data/LPP_TEMPLATE.xlsx")
+        template_exists = template_path.exists()
+        
+        if not template_exists:
+            st.warning("⚠️ Faça upload do template LPP primeiro")
+        
+        if st.button("📊 Gerar LPP.xlsx", use_container_width=True, type="primary", disabled=not template_exists):
+            output_path = "output/LPP.xlsx"
+            Path("output").mkdir(parents=True, exist_ok=True)
+            
+            with st.spinner("Gerando LPP.xlsx..."):
+                try:
+                    conn = get_connection()
+                    build_lpp_from_db(str(template_path), output_path, conn)
+                    conn.close()
+                    st.success(f"✅ LPP gerado! Ficheiro: {output_path}")
+                except Exception as e:
+                    st.error(f"❌ Erro: {e}")
+    
+    # TAB 3: DB Management
+    with tab3:
+        colored_header(
+            label="Gestão da Base de Dados",
+            description="Elimine dados ou visualize estatísticas",
+            color_name="red-70"
+        )
+        
+        conn = get_connection()
+        db_stats = get_db_stats(conn)
+        conn.close()
+        
+        col_db1, col_db2 = st.columns(2)
+        
+        with col_db1:
+            st.metric("Total Desenhos", db_stats['total_desenhos'])
+            st.metric("Total DWGs", db_stats['total_dwgs'])
+        
+        with col_db2:
+            if db_stats['dwg_list']:
+                dwg_info = ", ".join([f"{d['dwg_name']}({d['count']})" for d in db_stats['dwg_list']])
+                st.info(f"📁 **DWGs:** {dwg_info}")
+        
+        style_metric_cards()
+        
+        if db_stats['total_desenhos'] > 0:
+            st.markdown("---")
+            st.warning("**🗑️ Opções de Limpeza (CUIDADO!)**")
+            
+            delete_type = st.selectbox(
+                "Apagar por:",
+                ["Escolher...", "Tudo", "Por DWG", "Por Tipo", "Por Elemento"],
+                key="config_delete_type"
+            )
+            
+            if delete_type == "Tudo":
+                if st.button("⚠️ Apagar TODA a DB", type="secondary"):
+                    st.session_state['confirm_delete_config'] = 'all'
+            
+            elif delete_type == "Por DWG":
+                conn = get_connection()
+                dwg_list = [d['dwg_name'] for d in get_dwg_list(conn)]
+                conn.close()
+                if dwg_list:
+                    selected_dwg = st.selectbox("DWG:", dwg_list, key="config_del_dwg")
+                    if st.button(f"🗑️ Apagar {selected_dwg}"):
+                        st.session_state['confirm_delete_config'] = ('dwg', selected_dwg)
+            
+            # Confirmation
+            if st.session_state.get('confirm_delete_config'):
+                delete_info = st.session_state['confirm_delete_config']
+                
+                if delete_info == 'all':
+                    st.error(f"⚠️ Apagar TODOS os {db_stats['total_desenhos']} desenhos?")
+                elif delete_info[0] == 'dwg':
+                    st.error(f"⚠️ Apagar DWG '{delete_info[1]}'?")
+                
+                col_yes, col_no = st.columns(2)
+                with col_yes:
+                    if st.button("✅ Confirmar", key="config_yes"):
+                        conn = get_connection()
+                        deleted = 0
+                        
+                        if delete_info == 'all':
+                            deleted = delete_all_desenhos(conn)
+                        elif delete_info[0] == 'dwg':
+                            deleted = delete_desenhos_by_dwg(conn, delete_info[1])
+                        
+                        conn.close()
+                        st.session_state['confirm_delete_config'] = None
+                        st.success(f"✅ {deleted} desenho(s) apagado(s)")
+                        st.rerun()
+                
+                with col_no:
+                    if st.button("❌ Cancelar", key="config_no"):
+                        st.session_state['confirm_delete_config'] = None
+                        st.rerun()
+
+# Footer
+st.markdown("---")
+st.markdown(
+    "<div style='text-align: center; color: gray; padding: 20px;'>"
+    "JSJ Engenharia - Sistema de Gestão de Desenhos | Enhanced UI v3.0"
+    "</div>",
+    unsafe_allow_html=True
+)

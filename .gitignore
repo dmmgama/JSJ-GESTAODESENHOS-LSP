@@ -1,16 +1,37 @@
-# AutoCAD files
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# AutoCAD temp files
 *.bak
 *.dwl
 *.dwl2
 *.ac$
 *.sv$
 *_recover.dwg
+*.log
+
+# DWG files (não incluir no repo)
 *.dwg
 *.dxf
+DWG/
 
 # Windows
 Thumbs.db
 Desktop.ini
+
+# IDE
+.vscode/
+.idea/
+
+# Data folders (manter estrutura, ignorar conteúdo)
+data/csv_in/*.csv
+data/json_in/*.json
+output/*.csv
+output/*.json
 
 # Old/backup folders
 Old/

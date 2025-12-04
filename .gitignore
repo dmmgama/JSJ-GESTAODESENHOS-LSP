@@ -1,19 +1,35 @@
-# AutoCAD files
-*.bak
-*.dwl
-*.dwl2
-*.ac$
-*.sv$
-*_recover.dwg
-*.dwg
-*.dxf
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
 
-# Windows
+# Database
+*.db
+*.db-journal
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
 Thumbs.db
-Desktop.ini
 
-# Old/backup folders
-Old/
-OLD/
-WorkFiles/
+# Project specific
+output/
+data/csv_in/*.csv
+!data/csv_in/.gitkeep
+*.pyc
 
+# Test files
+check_schema.py
+verify_import.py
+import_o_csv.py
+fix_insert.py
+test_*.py

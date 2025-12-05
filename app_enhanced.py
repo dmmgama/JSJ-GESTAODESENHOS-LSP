@@ -142,11 +142,24 @@ def get_all_desenhos_with_revisoes_sorted(conn) -> list:
     return result
 
 
+# Estado interno options and configuration
+ESTADO_OPTIONS = [
+    "Desenvolvimento de Projeto",
+    "Emissão de Projeto",
+    "Precisa Revisão",
+    "Construído",
+    "Em Atraso"
+]
+
+ESTADO_DEFAULT = "Emissão de Projeto"
+
 # Estado interno colors and labels
 ESTADO_CONFIG = {
-    'projeto': {'label': '📋 Projeto', 'color': '#6c757d', 'bg': '#f8f9fa'},
-    'needs_revision': {'label': '⚠️ Precisa Revisão', 'color': '#dc3545', 'bg': '#fff3cd'},
-    'built': {'label': '✅ Construído', 'color': '#28a745', 'bg': '#d4edda'}
+    'Desenvolvimento de Projeto': {'label': '🔧 Desenvolvimento de Projeto', 'color': '#6c757d', 'bg': '#f8f9fa'},
+    'Emissão de Projeto': {'label': '📋 Emissão de Projeto', 'color': '#17a2b8', 'bg': '#d1ecf1'},
+    'Precisa Revisão': {'label': '⚠️ Precisa Revisão', 'color': '#ffc107', 'bg': '#fff3cd'},
+    'Construído': {'label': '✅ Construído', 'color': '#28a745', 'bg': '#d4edda'},
+    'Em Atraso': {'label': '🚨 Em Atraso', 'color': '#dc3545', 'bg': '#f8d7da'}
 }
 
 # ========================================
@@ -741,22 +754,45 @@ elif selected_page == "Dashboard":
     if desenhos:
         df = pd.DataFrame(desenhos)
         if 'estado_interno' not in df.columns:
-            df['estado_interno'] = 'projeto'
-        df['estado_interno'] = df['estado_interno'].fillna('projeto')
+            df['estado_interno'] = ESTADO_DEFAULT
+        df['estado_interno'] = df['estado_interno'].fillna(ESTADO_DEFAULT)
         
-        # Top metrics with styled cards
-        col1, col2, col3, col4, col5 = st.columns(5)
+        # Auto-update to "Em Atraso" if data_limite is past
+        today = date.today()
+        if 'data_limite' in df.columns:
+            for idx, row in df.iterrows():
+                data_limite_val = row.get('data_limite')
+                if data_limite_val and pd.notna(data_limite_val) and data_limite_val != '':
+                    try:
+                        # Parse date in DD-MM-YYYY format
+                        if isinstance(data_limite_val, str) and '-' in data_limite_val:
+                            parts = data_limite_val.split('-')
+                            if len(parts) == 3:
+                                if len(parts[0]) == 4:  # YYYY-MM-DD
+                                    dt = date(int(parts[0]), int(parts[1]), int(parts[2]))
+                                else:  # DD-MM-YYYY
+                                    dt = date(int(parts[2]), int(parts[1]), int(parts[0]))
+                                if dt < today and row.get('estado_interno') != 'Em Atraso':
+                                    df.at[idx, 'estado_interno'] = 'Em Atraso'
+                    except (ValueError, TypeError):
+                        pass
+        
+        # Top metrics with styled cards - recalculate from df after Em Atraso auto-update
+        estado_counts_dash = df['estado_interno'].value_counts()
+        col1, col2, col3, col4, col5, col6 = st.columns(6)
         
         with col1:
             st.metric("Total Desenhos", len(df), delta=None)
         with col2:
-            st.metric("📋 Projeto", estado_stats.get('projeto', 0))
+            st.metric("🔧 Desenvolvimento", estado_counts_dash.get('Desenvolvimento de Projeto', 0))
         with col3:
-            st.metric("⚠️ Precisa Revisão", estado_stats.get('needs_revision', 0))
+            st.metric("📋 Emissão", estado_counts_dash.get('Emissão de Projeto', 0))
         with col4:
-            st.metric("✅ Construído", estado_stats.get('built', 0))
+            st.metric("⚠️ Precisa Revisão", estado_counts_dash.get('Precisa Revisão', 0))
         with col5:
-            em_atraso = estado_stats.get('em_atraso', 0)
+            st.metric("✅ Construído", estado_counts_dash.get('Construído', 0))
+        with col6:
+            em_atraso = estado_counts_dash.get('Em Atraso', 0)
             st.metric("🚨 Em Atraso", em_atraso, delta=f"-{em_atraso}" if em_atraso > 0 else None)
         
         style_metric_cards()
@@ -889,22 +925,58 @@ elif selected_page == "Gestão de Desenhos":
     else:
         df = pd.DataFrame(desenhos)
         if 'estado_interno' not in df.columns:
-            df['estado_interno'] = 'projeto'
-        df['estado_interno'] = df['estado_interno'].fillna('projeto')
+            df['estado_interno'] = ESTADO_DEFAULT
+        df['estado_interno'] = df['estado_interno'].fillna(ESTADO_DEFAULT)
+        
+        # Auto-update to "Em Atraso" if data_limite is past and persist to DB
+        today = date.today()
+        ids_to_update_atraso = []
+        if 'data_limite' in df.columns:
+            for idx, row in df.iterrows():
+                data_limite_val = row.get('data_limite')
+                if data_limite_val and pd.notna(data_limite_val) and data_limite_val != '':
+                    try:
+                        # Parse date in DD-MM-YYYY or YYYY-MM-DD format
+                        if isinstance(data_limite_val, str) and '-' in data_limite_val:
+                            parts = data_limite_val.split('-')
+                            if len(parts) == 3:
+                                if len(parts[0]) == 4:  # YYYY-MM-DD
+                                    dt = date(int(parts[0]), int(parts[1]), int(parts[2]))
+                                else:  # DD-MM-YYYY
+                                    dt = date(int(parts[2]), int(parts[1]), int(parts[0]))
+                                if dt < today and row.get('estado_interno') != 'Em Atraso':
+                                    df.at[idx, 'estado_interno'] = 'Em Atraso'
+                                    if 'id' in row and pd.notna(row['id']):
+                                        ids_to_update_atraso.append(int(row['id']))
+                    except (ValueError, TypeError):
+                        pass
+        
+        # Persist "Em Atraso" updates to database
+        if ids_to_update_atraso:
+            conn = get_connection()
+            cursor = conn.cursor()
+            for desenho_id in ids_to_update_atraso:
+                cursor.execute("UPDATE desenhos SET estado_interno = 'Em Atraso', updated_at = CURRENT_TIMESTAMP WHERE id = ?", (desenho_id,))
+            conn.commit()
+            conn.close()
+        
+        # Recalculate estado stats after auto-update
+        estado_counts = df['estado_interno'].value_counts()
         
         # Quick stats
-        col1, col2, col3, col4, col5 = st.columns(5)
+        col1, col2, col3, col4, col5, col6 = st.columns(6)
         with col1:
             st.metric("Total", len(df))
         with col2:
-            st.metric("📋 Projeto", estado_stats.get('projeto', 0))
+            st.metric("🔧 Desenvolvimento", estado_counts.get('Desenvolvimento de Projeto', 0))
         with col3:
-            st.metric("⚠️ Precisa Revisão", estado_stats.get('needs_revision', 0))
+            st.metric("📋 Emissão", estado_counts.get('Emissão de Projeto', 0))
         with col4:
-            st.metric("✅ Construído", estado_stats.get('built', 0))
+            st.metric("⚠️ Precisa Revisão", estado_counts.get('Precisa Revisão', 0))
         with col5:
-            em_atraso = estado_stats.get('em_atraso', 0)
-            st.metric("🚨 Em Atraso", em_atraso)
+            st.metric("✅ Construído", estado_counts.get('Construído', 0))
+        with col6:
+            st.metric("🚨 Em Atraso", estado_counts.get('Em Atraso', 0))
         
         style_metric_cards()
         
@@ -932,8 +1004,8 @@ elif selected_page == "Gestão de Desenhos":
         dwg_sources_proj = get_unique_dwg_sources(conn, projeto_ativo)
         conn.close()
         
-        # Estado filter buttons
-        estado_col1, estado_col2, estado_col3, estado_col4, estado_col5 = st.columns(5)
+        # Estado filter buttons - 6 options
+        estado_col1, estado_col2, estado_col3, estado_col4, estado_col5, estado_col6 = st.columns(6)
         
         if 'estado_filter' not in st.session_state:
             st.session_state.estado_filter = 'Todos'
@@ -944,24 +1016,29 @@ elif selected_page == "Gestão de Desenhos":
                 st.session_state.estado_filter = 'Todos'
                 st.rerun()
         with estado_col2:
-            if st.button("📋 Projeto", use_container_width=True,
-                         type="primary" if st.session_state.estado_filter == 'projeto' else "secondary"):
-                st.session_state.estado_filter = 'projeto'
+            if st.button("🔧 Desenv.", use_container_width=True,
+                         type="primary" if st.session_state.estado_filter == 'Desenvolvimento de Projeto' else "secondary"):
+                st.session_state.estado_filter = 'Desenvolvimento de Projeto'
                 st.rerun()
         with estado_col3:
-            if st.button("⚠️ Precisa Revisão", use_container_width=True,
-                         type="primary" if st.session_state.estado_filter == 'needs_revision' else "secondary"):
-                st.session_state.estado_filter = 'needs_revision'
+            if st.button("📋 Emissão", use_container_width=True,
+                         type="primary" if st.session_state.estado_filter == 'Emissão de Projeto' else "secondary"):
+                st.session_state.estado_filter = 'Emissão de Projeto'
                 st.rerun()
         with estado_col4:
-            if st.button("✅ Construído", use_container_width=True,
-                         type="primary" if st.session_state.estado_filter == 'built' else "secondary"):
-                st.session_state.estado_filter = 'built'
+            if st.button("⚠️ Precisa Rev.", use_container_width=True,
+                         type="primary" if st.session_state.estado_filter == 'Precisa Revisão' else "secondary"):
+                st.session_state.estado_filter = 'Precisa Revisão'
                 st.rerun()
         with estado_col5:
+            if st.button("✅ Construído", use_container_width=True,
+                         type="primary" if st.session_state.estado_filter == 'Construído' else "secondary"):
+                st.session_state.estado_filter = 'Construído'
+                st.rerun()
+        with estado_col6:
             if st.button("🚨 Em Atraso", use_container_width=True,
-                         type="primary" if st.session_state.estado_filter == 'em_atraso' else "secondary"):
-                st.session_state.estado_filter = 'em_atraso'
+                         type="primary" if st.session_state.estado_filter == 'Em Atraso' else "secondary"):
+                st.session_state.estado_filter = 'Em Atraso'
                 st.rerun()
         
         # Dropdown filters - Order: Ficheiro DWG, Prefixo, Tipo de Desenho, Elemento, Revisão
@@ -1003,15 +1080,8 @@ elif selected_page == "Gestão de Desenhos":
             if 'pfix' in filtered_df.columns:
                 filtered_df = filtered_df[filtered_df['pfix'] == pfix_filter]
         
-        if st.session_state.estado_filter == 'em_atraso':
-            today = datetime.now().strftime('%Y-%m-%d')
-            filtered_df = filtered_df[
-                (filtered_df['estado_interno'] == 'needs_revision') & 
-                (filtered_df['data_limite'].notna()) & 
-                (filtered_df['data_limite'] != '') &
-                (filtered_df['data_limite'] < today)
-            ]
-        elif st.session_state.estado_filter != 'Todos':
+        # Apply estado filter - Em Atraso now stored directly in estado_interno
+        if st.session_state.estado_filter != 'Todos':
             filtered_df = filtered_df[filtered_df['estado_interno'] == st.session_state.estado_filter]
         
         if tipo_filter != "Todos":
@@ -1034,6 +1104,72 @@ elif selected_page == "Gestão de Desenhos":
         
         st.markdown("---")
         
+        # ========================================
+        # SORTING PRIORITY - 3 Levels
+        # ========================================
+        st.markdown("### 📊 Ordenação")
+        
+        # Sort options mapping: UI label -> DB column
+        SORT_OPTIONS = {
+            "Prefixo": "pfix",
+            "Tipo de Desenho": "tipo_display",
+            "NºDesenho": "des_num",
+            "DWG": "dwg_source"
+        }
+        sort_labels = list(SORT_OPTIONS.keys())
+        
+        # Initialize session state for sort priorities
+        if 'sort_priority_1' not in st.session_state:
+            st.session_state['sort_priority_1'] = "Prefixo"
+        if 'sort_priority_2' not in st.session_state:
+            st.session_state['sort_priority_2'] = "Tipo de Desenho"
+        if 'sort_priority_3' not in st.session_state:
+            st.session_state['sort_priority_3'] = "NºDesenho"
+        
+        sort_col1, sort_col2, sort_col3 = st.columns(3)
+        
+        with sort_col1:
+            sort_1 = st.selectbox(
+                "1ª Prioridade",
+                sort_labels,
+                index=sort_labels.index(st.session_state['sort_priority_1']),
+                key="sort_select_1"
+            )
+            st.session_state['sort_priority_1'] = sort_1
+        
+        with sort_col2:
+            sort_2 = st.selectbox(
+                "2ª Prioridade",
+                sort_labels,
+                index=sort_labels.index(st.session_state['sort_priority_2']),
+                key="sort_select_2"
+            )
+            st.session_state['sort_priority_2'] = sort_2
+        
+        with sort_col3:
+            sort_3 = st.selectbox(
+                "3ª Prioridade",
+                sort_labels,
+                index=sort_labels.index(st.session_state['sort_priority_3']),
+                key="sort_select_3"
+            )
+            st.session_state['sort_priority_3'] = sort_3
+        
+        # Apply multi-level sorting
+        sort_columns = [
+            SORT_OPTIONS[st.session_state['sort_priority_1']],
+            SORT_OPTIONS[st.session_state['sort_priority_2']],
+            SORT_OPTIONS[st.session_state['sort_priority_3']]
+        ]
+        
+        # Only include columns that exist in the dataframe
+        valid_sort_columns = [col for col in sort_columns if col in filtered_df.columns]
+        
+        if valid_sort_columns:
+            filtered_df = filtered_df.sort_values(by=valid_sort_columns, ascending=True, na_position='last')
+        
+        st.markdown("---")
+        
         # AgGrid Table
         st.markdown("### 📋 Tabela de Desenhos")
         
@@ -1050,7 +1186,7 @@ elif selected_page == "Gestão de Desenhos":
             'titulo': 'Titulo',
             'r': 'Ultima Revisão',
             'r_data': 'Data Revisão',
-            'estado_interno': 'Estado',
+            'estado_interno': 'Estado do Desenho',
             'layout_name': 'Layout',
             'tipo_key': 'Tipo Key',
             'elemento_key': 'Elemento Key',
@@ -1090,7 +1226,7 @@ elif selected_page == "Gestão de Desenhos":
         # Default visible columns (ordem pretendida)
         default_visible = [
             'tipo_display', 'pfix', 'des_num', 'elemento', 'titulo',
-            'r', 'r_data', 'estado_interno'
+            'r', 'r_data', 'estado_interno', 'data_limite'
         ]
         
         # Initialize session state for visible columns and column order
@@ -1178,12 +1314,10 @@ elif selected_page == "Gestão de Desenhos":
         if 'original_data' not in st.session_state:
             st.session_state['original_data'] = aggrid_df.copy()
         
-        # Format estado_interno for display
+        # Fill estado_interno empty values with default
         if 'estado_interno' in aggrid_df.columns:
-            # Keep original values for editing, just display formatted
-            aggrid_df['estado_interno_display'] = aggrid_df['estado_interno'].apply(
-                lambda x: ESTADO_CONFIG.get(x, ESTADO_CONFIG['projeto'])['label'] if x else 'projeto'
-            )
+            aggrid_df['estado_interno'] = aggrid_df['estado_interno'].fillna(ESTADO_DEFAULT)
+            aggrid_df['estado_interno'] = aggrid_df['estado_interno'].replace('', ESTADO_DEFAULT)
         
         # Build AgGrid options
         gb = GridOptionsBuilder.from_dataframe(aggrid_df)
@@ -1194,9 +1328,6 @@ elif selected_page == "Gestão de Desenhos":
         
         # Configure all columns with proper titles from COLUMN_TITLES
         for col in aggrid_df.columns:
-            if col == 'estado_interno_display':
-                continue  # Skip display column
-            
             title = COLUMN_TITLES.get(col, col)
             width = 150  # Default width
             editable = True
@@ -1229,11 +1360,20 @@ elif selected_page == "Gestão de Desenhos":
                 title = 'Data Revisão'
                 width = 120
             elif col == 'estado_interno':
-                title = 'Estado'
-                width = 120
+                title = 'Estado do Desenho'
+                width = 180
                 gb.configure_column(col, header_name=title, width=width, editable=editable,
                                   cellEditor='agSelectCellEditor',
-                                  cellEditorParams={'values': ['projeto', 'needs_revision', 'built']})
+                                  cellEditorParams={'values': ESTADO_OPTIONS})
+                continue
+            elif col == 'data_limite':
+                title = 'Data Limite'
+                width = 130
+                # Configure as date with DD-MM-YYYY format display
+                gb.configure_column(col, header_name=title, width=width, editable=editable,
+                                  type=['dateColumnFilter', 'customDateTimeFormat'],
+                                  custom_format_string='dd-MM-yyyy',
+                                  valueFormatter="x ? x.split('-').reverse().join('-') : ''")
                 continue
             elif col == 'layout_name':
                 width = 200
@@ -1393,14 +1533,16 @@ elif selected_page == "Gestão de Desenhos":
                         with col_edit:
                             st.markdown("**✏️ Editar Estado:**")
                             
-                            estado_atual = desenho.get('estado_interno') or 'projeto'
-                            estado_options = ['projeto', 'needs_revision', 'built']
-                            estado_labels = {e: ESTADO_CONFIG[e]['label'] for e in estado_options}
+                            estado_atual = desenho.get('estado_interno') or ESTADO_DEFAULT
+                            # Ensure estado_atual is a valid option
+                            if estado_atual not in ESTADO_OPTIONS:
+                                estado_atual = ESTADO_DEFAULT
+                            estado_labels = {e: ESTADO_CONFIG[e]['label'] for e in ESTADO_OPTIONS}
                             
                             novo_estado = st.selectbox(
-                                "Estado:",
-                                estado_options,
-                                index=estado_options.index(estado_atual),
+                                "Estado do Desenho:",
+                                ESTADO_OPTIONS,
+                                index=ESTADO_OPTIONS.index(estado_atual),
                                 format_func=lambda x: estado_labels[x],
                                 key=f"edit_estado_{desenho_id}"
                             )

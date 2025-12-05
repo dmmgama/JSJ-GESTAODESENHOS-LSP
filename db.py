@@ -146,7 +146,10 @@ def criar_tabelas(conn):
 
 def upsert_desenho(conn, desenho_data: Dict[str, Any]) -> int:
     """
-    Insert or update a desenho based on layout_name.
+    Insert or update a desenho based on id_cad (unique identifier).
+    
+    If id_cad exists in DB, the existing record is DELETED and a new one is inserted.
+    This ensures id_cad is always unique.
     
     NOTE: Project fields (cliente, obra, localizacao, especialidade, projetou)
     are NOT stored in desenhos - they come from projetos table via proj_num FK.
@@ -160,106 +163,58 @@ def upsert_desenho(conn, desenho_data: Dict[str, Any]) -> int:
     """
     cursor = conn.cursor()
     
-    # Check if layout_name + dwg_name exists (composite key)
-    cursor.execute(
-        "SELECT id FROM desenhos WHERE layout_name = ? AND dwg_name = ?",
-        (desenho_data['layout_name'], desenho_data.get('dwg_name', ''))
-    )
-    existing = cursor.fetchone()
+    id_cad = desenho_data.get('id_cad', '')
     
-    if existing:
-        # UPDATE
-        desenho_id = existing[0]
-        cursor.execute("""
-            UPDATE desenhos SET
-                dwg_name = ?,
-                proj_num = ?,
-                proj_nome = ?,
-                dwg_source = ?,
-                fase = ?,
-                fase_pfix = ?,
-                emissao = ?,
-                data = ?,
-                escalas = ?,
-                pfix = ?,
-                tipo_display = ?,
-                tipo_key = ?,
-                elemento = ?,
-                titulo = ?,
-                elemento_titulo = ?,
-                elemento_key = ?,
-                des_num = ?,
-                r = ?,
-                r_data = ?,
-                r_desc = ?,
-                id_cad = ?,
-                raw_attributes = ?,
-                updated_at = ?
-            WHERE id = ?
-        """, (
-            desenho_data.get('dwg_name', ''),
-            desenho_data.get('proj_num', ''),
-            desenho_data.get('proj_nome', ''),
-            desenho_data.get('dwg_source', ''),
-            desenho_data.get('fase', ''),
-            desenho_data.get('fase_pfix', ''),
-            desenho_data.get('emissao', ''),
-            desenho_data.get('data', ''),
-            desenho_data.get('escalas', ''),
-            desenho_data.get('pfix', ''),
-            desenho_data.get('tipo_display', ''),
-            desenho_data.get('tipo_key', ''),
-            desenho_data.get('elemento', ''),
-            desenho_data.get('titulo', ''),
-            desenho_data.get('elemento_titulo', ''),
-            desenho_data.get('elemento_key', ''),
-            desenho_data.get('des_num', ''),
-            desenho_data.get('r', ''),
-            desenho_data.get('r_data', ''),
-            desenho_data.get('r_desc', ''),
-            desenho_data.get('id_cad', ''),
-            desenho_data.get('raw_attributes', ''),
-            datetime.now().isoformat(),
-            desenho_id
-        ))
-    else:
-        # INSERT
-        cursor.execute("""
-            INSERT INTO desenhos (
-                layout_name, dwg_name, proj_num, proj_nome, dwg_source,
-                fase, fase_pfix, emissao, data, escalas, pfix,
-                tipo_display, tipo_key, elemento, titulo, elemento_titulo, elemento_key,
-                des_num, r, r_data, r_desc, id_cad, raw_attributes,
-                created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            desenho_data['layout_name'],
-            desenho_data.get('dwg_name', ''),
-            desenho_data.get('proj_num', ''),
-            desenho_data.get('proj_nome', ''),
-            desenho_data.get('dwg_source', ''),
-            desenho_data.get('fase', ''),
-            desenho_data.get('fase_pfix', ''),
-            desenho_data.get('emissao', ''),
-            desenho_data.get('data', ''),
-            desenho_data.get('escalas', ''),
-            desenho_data.get('pfix', ''),
-            desenho_data.get('tipo_display', ''),
-            desenho_data.get('tipo_key', ''),
-            desenho_data.get('elemento', ''),
-            desenho_data.get('titulo', ''),
-            desenho_data.get('elemento_titulo', ''),
-            desenho_data.get('elemento_key', ''),
-            desenho_data.get('des_num', ''),
-            desenho_data.get('r', ''),
-            desenho_data.get('r_data', ''),
-            desenho_data.get('r_desc', ''),
-            desenho_data.get('id_cad', ''),
-            desenho_data.get('raw_attributes', ''),
-            datetime.now().isoformat(),
-            datetime.now().isoformat()
-        ))
-        desenho_id = cursor.lastrowid
+    # If id_cad is provided, check if it exists and delete existing record
+    if id_cad and id_cad.strip():
+        cursor.execute("SELECT id FROM desenhos WHERE id_cad = ?", (id_cad,))
+        existing = cursor.fetchone()
+        
+        if existing:
+            existing_id = existing[0]
+            # Delete associated revisoes first
+            cursor.execute("DELETE FROM revisoes WHERE desenho_id = ?", (existing_id,))
+            # Delete the desenho
+            cursor.execute("DELETE FROM desenhos WHERE id = ?", (existing_id,))
+            print(f"  Deleted existing desenho with id_cad={id_cad} (ID: {existing_id})")
+    
+    # Always INSERT new record
+    cursor.execute("""
+        INSERT INTO desenhos (
+            layout_name, dwg_name, proj_num, proj_nome, dwg_source,
+            fase, fase_pfix, emissao, data, escalas, pfix,
+            tipo_display, tipo_key, elemento, titulo, elemento_titulo, elemento_key,
+            des_num, r, r_data, r_desc, id_cad, raw_attributes,
+            created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        desenho_data['layout_name'],
+        desenho_data.get('dwg_name', ''),
+        desenho_data.get('proj_num', ''),
+        desenho_data.get('proj_nome', ''),
+        desenho_data.get('dwg_source', ''),
+        desenho_data.get('fase', ''),
+        desenho_data.get('fase_pfix', ''),
+        desenho_data.get('emissao', ''),
+        desenho_data.get('data', ''),
+        desenho_data.get('escalas', ''),
+        desenho_data.get('pfix', ''),
+        desenho_data.get('tipo_display', ''),
+        desenho_data.get('tipo_key', ''),
+        desenho_data.get('elemento', ''),
+        desenho_data.get('titulo', ''),
+        desenho_data.get('elemento_titulo', ''),
+        desenho_data.get('elemento_key', ''),
+        desenho_data.get('des_num', ''),
+        desenho_data.get('r', ''),
+        desenho_data.get('r_data', ''),
+        desenho_data.get('r_desc', ''),
+        desenho_data.get('id_cad', ''),
+        desenho_data.get('raw_attributes', ''),
+        datetime.now().isoformat(),
+        datetime.now().isoformat()
+    ))
+    desenho_id = cursor.lastrowid
     
     conn.commit()
     return desenho_id

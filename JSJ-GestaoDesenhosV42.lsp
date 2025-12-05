@@ -685,14 +685,14 @@
   (princ)
 )
 
-;; Exportar Dados Gerais (nova opção 4)
-(defun ExportarDadosGerais ( / doc path projNum csvFile fileDes blk
+;; Exportar Dados do Projeto (nova opção 4)
+(defun ExportarDadosProjeto ( / doc path projNum csvFile fileDes blk
                                projNome cliente obra localizacao especialidade projetou
                                fase fasePfix emissao data)
   (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
   (setq path (getvar "DWGPREFIX"))
   
-  (princ "\n\n=== EXPORTAR DADOS GERAIS ===")
+  (princ "\n\n=== EXPORTAR DADOS DO PROJETO ===")
   (princ "\nExporta apenas os dados de projeto, fase e emissão.\n")
   
   ;; Recolher dados do primeiro desenho (exceto TEMPLATE)
@@ -735,7 +735,7 @@
       (princ (strcat "\n  DATA: " data))
       
       ;; Nome do ficheiro: PROJ_NUM-DadosProjeto.csv
-      (setq csvFile (getfiled "Guardar Dados Gerais" 
+      (setq csvFile (getfiled "Guardar Dados do Projeto" 
                               (strcat path projNum "-DadosProjeto.csv") 
                               "csv" 1))
       
@@ -763,24 +763,24 @@
                 ";;;;;;;;;;;;;;;;;;;;;;;;") fileDes)
               
               (close fileDes)
-              (WriteLog (strcat "EXPORT DADOS GERAIS: " csvFile))
-              (alert (strcat "Dados gerais exportados!\n\nFicheiro: " csvFile)))
+              (WriteLog (strcat "EXPORT DADOS PROJETO: " csvFile))
+              (alert (strcat "Dados do projeto exportados!\n\nFicheiro: " csvFile)))
             (alert "Erro ao criar ficheiro.")))
         (princ "\nCancelado."))))
   (princ)
 )
 
-;; Importar Dados Gerais (nova opção 5)
-(defun ImportarDadosGerais ( / doc csvFile fileDes line fields confirma count
+;; Importar Dados do Projeto (nova opção 5)
+(defun ImportarDadosProjeto ( / doc csvFile fileDes line fields confirma count
                                projNum projNome cliente obra localizacao especialidade projetou
                                fase fasePfix emissao data)
   (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
   
-  (princ "\n\n=== IMPORTAR DADOS GERAIS ===")
-  (princ "\nSelecione o ficheiro CSV com os dados gerais.\n")
+  (princ "\n\n=== IMPORTAR DADOS DO PROJETO ===")
+  (princ "\nSelecione o ficheiro CSV com os dados do projeto.\n")
   
   ;; Pedir ficheiro CSV
-  (setq csvFile (getfiled "Selecionar CSV Dados Gerais" "" "csv" 0))
+  (setq csvFile (getfiled "Selecionar CSV Dados do Projeto" "" "csv" 0))
   
   (if (not csvFile)
     (princ "\nOperação cancelada.")
@@ -858,9 +858,9 @@
                             (setq count (1+ count)))))))
                   
                   (vla-Regen doc acActiveViewport)
-                  (WriteLog (strcat "IMPORT DADOS GERAIS: " (itoa count) " desenhos atualizados"))
+                  (WriteLog (strcat "IMPORT DADOS PROJETO: " (itoa count) " desenhos atualizados"))
                   (alert (strcat "Dados importados com sucesso!\n\n" (itoa count) " desenhos atualizados.")))
-                (princ "\nImportação cancelada.")))))))
+                (princ "\nImportação cancelada."))))))))
   (princ)
 )
 
@@ -886,8 +886,8 @@
       ((= optSub "1") (DefinirDadosProjeto))
       ((= optSub "2") (DefinirFase))
       ((= optSub "3") (DefinirEmissao))
-      ((= optSub "4") (ExportarDadosGerais))
-      ((= optSub "5") (ImportarDadosGerais))
+      ((= optSub "4") (ExportarDadosProjeto))
+      ((= optSub "5") (ImportarDadosProjeto))
       ((= optSub "9") (ModoNavegacao))
       ((= optSub "0") (setq loopSub nil))
       ((= optSub nil) (setq loopSub nil))))
@@ -987,8 +987,7 @@
           (princ "\nA apagar revisões...")
           (setq countRev 0)
           (vlax-for lay (vla-get-Layouts doc)
-            (if (and (/= (vla-get-ModelType lay) :vlax-true)
-                     (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
+            (if (/= (vla-get-ModelType lay) :vlax-true)
               (vlax-for blk (vla-get-Block lay)
                 (if (IsTargetBlock blk)
                   (progn
@@ -1046,8 +1045,7 @@
           (princ "\nA apagar revisões...")
           (setq countRev 0)
           (vlax-for lay (vla-get-Layouts doc)
-            (if (and (/= (vla-get-ModelType lay) :vlax-true)
-                     (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
+            (if (/= (vla-get-ModelType lay) :vlax-true)
               (vlax-for blk (vla-get-Block lay)
                 (if (IsTargetBlock blk)
                   (progn

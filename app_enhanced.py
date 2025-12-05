@@ -429,16 +429,12 @@ if selected_page == "Projetos":
             st.session_state['projetos_mode'] = 'list'
             st.rerun()
     with col_mode2:
-        # Show Ativar Projeto button - needs project selection from session state
-        projeto_para_ativar = st.session_state.get('projeto_selecionado_para_ativar')
-        btn_label = f"✅ Ativar: {projeto_para_ativar}" if projeto_para_ativar else "✅ Ativar Projeto"
-        btn_disabled = not projeto_para_ativar
-        if st.button(btn_label, use_container_width=True, type="primary" if projeto_para_ativar else "secondary", disabled=btn_disabled):
-            if projeto_para_ativar:
-                st.session_state['projeto_ativo'] = projeto_para_ativar
-                st.session_state['projeto_selecionado_para_ativar'] = None
-                st.success(f"Projeto {projeto_para_ativar} ativado!")
-                st.rerun()
+        # Show current active project info or prompt to select
+        projeto_ativo_atual = st.session_state.get('projeto_ativo')
+        if projeto_ativo_atual:
+            st.button(f"📂 Ativo: {projeto_ativo_atual}", use_container_width=True, type="primary", disabled=True)
+        else:
+            st.button("⚠️ Nenhum Ativo", use_container_width=True, type="secondary", disabled=True)
     with col_mode3:
         if st.button("➕ Novo Projeto", use_container_width=True, type="primary" if st.session_state.get('projetos_mode') == 'create' else "secondary"):
             st.session_state['projetos_mode'] = 'create'
@@ -483,9 +479,9 @@ if selected_page == "Projetos":
             
             df_projetos = pd.DataFrame(projeto_data)
             
-            # Display with AgGrid
+            # Display with AgGrid - with checkbox for selection
             gb = GridOptionsBuilder.from_dataframe(df_projetos)
-            gb.configure_selection('single', use_checkbox=False)
+            gb.configure_selection('single', use_checkbox=True, pre_selected_rows=[])
             gb.configure_default_column(filterable=True, sorteable=True, resizable=True)
             gb.configure_pagination(paginationPageSize=20)
             gb.configure_column("PROJ_NUM", header_name="PROJ_NUM", width=100, pinned='left')
@@ -511,11 +507,19 @@ if selected_page == "Projetos":
                 selected = selected_rows.iloc[0] if isinstance(selected_rows, pd.DataFrame) else selected_rows[0]
                 proj_num = selected['PROJ_NUM']
                 
-                # Store selection for the top menu button
+                # Store selection for reference
                 st.session_state['projeto_selecionado_para_ativar'] = proj_num
                 
-                st.success(f"**✓ Selecionado:** {proj_num} - {selected['PROJ_NOME']}")
-                st.info("💡 Clique no botão '✅ Ativar Projeto' no menu acima para ativar este projeto.")
+                col_sel1, col_sel2 = st.columns([3, 1])
+                with col_sel1:
+                    st.success(f"**✓ Selecionado:** {proj_num} - {selected['PROJ_NOME']}")
+                with col_sel2:
+                    if st.button("✅ Ativar Este Projeto", type="primary", use_container_width=True, key="btn_ativar_selecionado"):
+                        st.session_state['projeto_ativo'] = proj_num
+                        st.session_state['projeto_selecionado_para_ativar'] = None
+                        st.success(f"Projeto {proj_num} ativado!")
+                        time.sleep(0.5)
+                        st.rerun()
             else:
                 st.session_state['projeto_selecionado_para_ativar'] = None
                 st.warning("⚠️ Nenhum projeto selecionado. Clique numa linha da tabela acima.")
@@ -1036,50 +1040,133 @@ elif selected_page == "Gestão de Desenhos":
         # Column Selection
         st.markdown("#### 🔧 Seleção de Colunas")
         
+        # Mapeamento de atributos BD -> Títulos UI
+        COLUMN_TITLES = {
+            'id': 'ID',
+            'tipo_display': 'Tipo de Desenho',
+            'pfix': 'Prefixo',
+            'des_num': 'NºDesenho',
+            'elemento': 'Elemento',
+            'titulo': 'Titulo',
+            'r': 'Ultima Revisão',
+            'r_data': 'Data Revisão',
+            'estado_interno': 'Estado',
+            'layout_name': 'Layout',
+            'tipo_key': 'Tipo Key',
+            'elemento_key': 'Elemento Key',
+            'r_desc': 'Descrição Revisão',
+            'comentario': 'Comentário',
+            'data_limite': 'Data Limite',
+            'responsavel': 'Responsável',
+            'dwg_source': 'DWG_SOURCE',
+            'cliente': 'Cliente',
+            'obra': 'Obra',
+            'localizacao': 'Localização',
+            'especialidade': 'Especialidade',
+            'fase': 'Fase',
+            'projetou': 'Projetou',
+            'escalas': 'Escalas',
+            'data': 'Data',
+            'proj_num': 'Proj Nº',
+            'proj_nome': 'Projeto',
+            'fase_pfix': 'Fase Pfix',
+            'emissao': 'Emissão',
+            'id_cad': 'ID CAD',
+            'created_at': 'Criado em',
+            'updated_at': 'Atualizado em',
+            'elemento_titulo': 'Elemento Título'
+        }
+        
         # All available columns from the dataframe
         all_columns = [
-            'id', 'des_num', 'layout_name', 'tipo_display', 'tipo_key', 'elemento', 'elemento_key',
-            'titulo', 'r', 'r_data', 'r_desc', 'estado_interno', 'comentario', 'data_limite',
-            'responsavel', 'dwg_source', 'cliente', 'obra', 'localizacao',
-            'especialidade', 'fase', 'projetou', 'escalas', 'data', 'proj_num', 'proj_nome',
-            'fase_pfix', 'emissao', 'pfix', 'id_cad', 'created_at', 'updated_at'
+            'id', 'tipo_display', 'pfix', 'des_num', 'elemento', 'titulo',
+            'r', 'r_data', 'estado_interno', 'layout_name', 'tipo_key', 'elemento_key',
+            'r_desc', 'comentario', 'data_limite', 'responsavel', 'dwg_source', 
+            'cliente', 'obra', 'localizacao', 'especialidade', 'fase', 'projetou', 
+            'escalas', 'data', 'proj_num', 'proj_nome', 'fase_pfix', 'emissao', 
+            'id_cad', 'created_at', 'updated_at'
         ]
         
-        # Default visible columns
+        # Default visible columns (ordem pretendida)
         default_visible = [
-            'id', 'des_num', 'layout_name', 'tipo_display', 'elemento', 'titulo',
-            'r', 'r_data', 'estado_interno', 'comentario', 'data_limite', 'dwg_source'
+            'tipo_display', 'pfix', 'des_num', 'elemento', 'titulo',
+            'r', 'r_data', 'estado_interno'
         ]
         
-        # Initialize session state for visible columns
+        # Initialize session state for visible columns and column order
         if 'visible_columns' not in st.session_state:
-            st.session_state['visible_columns'] = default_visible
+            st.session_state['visible_columns'] = default_visible.copy()
+        if 'column_order' not in st.session_state:
+            st.session_state['column_order'] = None  # Will store user's column order
         
         # Filter to only show columns that exist in the filtered dataframe
         available_columns = [col for col in all_columns if col in filtered_df.columns]
         
-        # Column selector
-        col_selector1, col_selector2 = st.columns([3, 1])
-        with col_selector1:
-            selected_columns = st.multiselect(
-                "Escolha as colunas a visualizar:",
-                options=available_columns,
-                default=[col for col in st.session_state['visible_columns'] if col in available_columns],
-                key="column_selector"
-            )
-        
-        with col_selector2:
+        # Column selector with expander button
+        col_btn1, col_btn2 = st.columns([1, 3])
+        with col_btn1:
+            show_column_selector = st.button("🔧 Escolher Colunas", use_container_width=True)
+        with col_btn2:
             if st.button("🔄 Restaurar Padrão", use_container_width=True):
-                st.session_state['visible_columns'] = default_visible
+                st.session_state['visible_columns'] = default_visible.copy()
+                st.session_state['column_order'] = None
                 st.rerun()
         
-        # Update session state
-        if selected_columns:
-            st.session_state['visible_columns'] = selected_columns
-            display_columns = selected_columns
-        else:
-            st.info("⚠️ Selecione pelo menos uma coluna para visualizar")
-            display_columns = default_visible
+        # Show column selector in expander when button is clicked
+        if show_column_selector or st.session_state.get('show_column_selector', False):
+            st.session_state['show_column_selector'] = True
+            with st.expander("📋 Selecionar Colunas a Visualizar", expanded=True):
+                st.caption("Marque as colunas que deseja adicionar à tabela:")
+                
+                # Create checkboxes in columns for better layout
+                cols_per_row = 4
+                checkbox_cols = st.columns(cols_per_row)
+                
+                selected_additional = []
+                for idx, col in enumerate(available_columns):
+                    if col == 'id':  # Skip ID, always included internally
+                        continue
+                    col_idx = idx % cols_per_row
+                    with checkbox_cols[col_idx]:
+                        # Check if column is in default or currently selected
+                        is_default = col in default_visible
+                        is_selected = col in st.session_state['visible_columns']
+                        label = f"{COLUMN_TITLES.get(col, col)}"
+                        if is_default:
+                            label += " ⭐"  # Mark default columns
+                        if st.checkbox(label, value=is_selected, key=f"col_check_{col}"):
+                            selected_additional.append(col)
+                
+                # Update button
+                if st.button("✅ Atualizar Tabela", type="primary", use_container_width=True):
+                    # Maintain order: default columns first (if selected), then additional
+                    new_visible = []
+                    for col in default_visible:
+                        if col in selected_additional:
+                            new_visible.append(col)
+                    for col in selected_additional:
+                        if col not in new_visible:
+                            new_visible.append(col)
+                    st.session_state['visible_columns'] = new_visible if new_visible else default_visible.copy()
+                    st.session_state['show_column_selector'] = False
+                    st.rerun()
+        
+        # Get display columns - use saved order if available
+        display_columns = st.session_state['visible_columns'] if st.session_state['visible_columns'] else default_visible
+        
+        # Apply saved column order if exists
+        if st.session_state.get('column_order'):
+            # Reorder display_columns based on saved order
+            saved_order = st.session_state['column_order']
+            ordered_columns = []
+            for col in saved_order:
+                if col in display_columns:
+                    ordered_columns.append(col)
+            # Add any columns not in saved order
+            for col in display_columns:
+                if col not in ordered_columns:
+                    ordered_columns.append(col)
+            display_columns = ordered_columns
         
         # Ensure 'id' is always included for functionality (but can be hidden in display)
         if 'id' not in display_columns and 'id' in filtered_df.columns:
@@ -1105,40 +1192,59 @@ elif selected_page == "Gestão de Desenhos":
         gb.configure_default_column(filterable=True, sorteable=True, resizable=True, editable=True)
         gb.configure_selection('multiple', use_checkbox=True, pre_selected_rows=[])
         
-        # Special column configurations
-        if 'id' in aggrid_df.columns:
-            gb.configure_column("id", header_name="ID", width=80, pinned='left', editable=False)
-        if 'des_num' in aggrid_df.columns:
-            gb.configure_column("des_num", header_name="Nº Desenho", width=150, pinned='left')
-        if 'layout_name' in aggrid_df.columns:
-            gb.configure_column("layout_name", header_name="Layout", width=200)
-        if 'tipo_display' in aggrid_df.columns:
-            gb.configure_column("tipo_display", header_name="Tipo", width=150)
-        if 'elemento' in aggrid_df.columns:
-            gb.configure_column("elemento", header_name="Elemento", width=150)
-        if 'titulo' in aggrid_df.columns:
-            gb.configure_column("titulo", header_name="Título", width=250)
-        if 'r' in aggrid_df.columns:
-            gb.configure_column("r", header_name="Rev", width=80)
-        if 'r_data' in aggrid_df.columns:
-            gb.configure_column("r_data", header_name="Data Rev", width=120)
-        if 'estado_interno' in aggrid_df.columns:
-            # Use dropdown for estado_interno
-            gb.configure_column("estado_interno", header_name="Estado", width=150, 
-                              cellEditor='agSelectCellEditor',
-                              cellEditorParams={'values': ['projeto', 'needs_revision', 'built']})
-        if 'comentario' in aggrid_df.columns:
-            gb.configure_column("comentario", header_name="Comentário", width=250)
-        if 'data_limite' in aggrid_df.columns:
-            gb.configure_column("data_limite", header_name="Data Limite", width=120)
-        if 'responsavel' in aggrid_df.columns:
-            gb.configure_column("responsavel", header_name="Responsável", width=150)
-        if 'dwg_source' in aggrid_df.columns:
-            gb.configure_column("dwg_source", header_name="DWG_SOURCE", width=180)
-        if 'proj_num' in aggrid_df.columns:
-            gb.configure_column("proj_num", header_name="Proj Nº", width=100)
-        if 'proj_nome' in aggrid_df.columns:
-            gb.configure_column("proj_nome", header_name="Projeto", width=200)
+        # Configure all columns with proper titles from COLUMN_TITLES
+        for col in aggrid_df.columns:
+            if col == 'estado_interno_display':
+                continue  # Skip display column
+            
+            title = COLUMN_TITLES.get(col, col)
+            width = 150  # Default width
+            editable = True
+            pinned = None
+            
+            # Special configurations per column
+            if col == 'id':
+                width = 60
+                pinned = 'left'
+                editable = False
+            elif col == 'tipo_display':
+                title = 'Tipo de Desenho'
+                width = 150
+            elif col == 'pfix':
+                title = 'Prefixo'
+                width = 100
+            elif col == 'des_num':
+                title = 'NºDesenho'
+                width = 120
+            elif col == 'elemento':
+                title = 'Elemento'
+                width = 150
+            elif col == 'titulo':
+                title = 'Titulo'
+                width = 250
+            elif col == 'r':
+                title = 'Ultima Revisão'
+                width = 100
+            elif col == 'r_data':
+                title = 'Data Revisão'
+                width = 120
+            elif col == 'estado_interno':
+                title = 'Estado'
+                width = 120
+                gb.configure_column(col, header_name=title, width=width, editable=editable,
+                                  cellEditor='agSelectCellEditor',
+                                  cellEditorParams={'values': ['projeto', 'needs_revision', 'built']})
+                continue
+            elif col == 'layout_name':
+                width = 200
+            elif col == 'comentario':
+                width = 250
+            elif col == 'dwg_source':
+                width = 180
+            elif col == 'proj_nome':
+                width = 200
+            
+            gb.configure_column(col, header_name=title, width=width, editable=editable, pinned=pinned)
         
         gridOptions = gb.build()
         
@@ -1162,6 +1268,12 @@ elif selected_page == "Gestão de Desenhos":
             if st.button("💾 Guardar Alterações", type="primary", use_container_width=True):
                 if grid_response['data'] is not None:
                     edited_df = pd.DataFrame(grid_response['data'])
+                    
+                    # Save column order from the current grid state
+                    # The columns in edited_df reflect the current order
+                    current_column_order = [col for col in edited_df.columns if col != 'estado_interno_display']
+                    st.session_state['column_order'] = current_column_order
+                    st.session_state['visible_columns'] = [col for col in current_column_order if col in st.session_state.get('visible_columns', default_visible)]
                     
                     # Define valid columns that exist in the desenhos table
                     # These are the ONLY columns we can update
@@ -1236,7 +1348,7 @@ elif selected_page == "Gestão de Desenhos":
                     st.warning("⚠️ Nenhum dado para guardar")
         
         with col_save2:
-            st.caption("💡 Edite as células diretamente na tabela e clique em 'Guardar Alterações'")
+            st.caption("💡 Edite células na tabela. A ordem das colunas também é guardada.")
         
         with col_save3:
             if st.button("🔄 Recarregar Dados", use_container_width=True):

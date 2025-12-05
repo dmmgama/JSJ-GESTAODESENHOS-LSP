@@ -413,14 +413,15 @@ def get_dwg_list(conn) -> List[Dict[str, Any]]:
     Get list of all DWG files in database with counts.
     
     Returns:
-        List of dicts with dwg_name and count
+        List of dicts with dwg_source and count
     """
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT dwg_name, COUNT(*) as count 
+        SELECT dwg_source, COUNT(*) as count 
         FROM desenhos 
-        GROUP BY dwg_name 
-        ORDER BY dwg_name
+        WHERE dwg_source IS NOT NULL AND dwg_source != ''
+        GROUP BY dwg_source 
+        ORDER BY dwg_source
     """)
     rows = cursor.fetchall()
     return [dict(row) for row in rows]
@@ -449,13 +450,13 @@ def delete_all_desenhos(conn) -> int:
     return count
 
 
-def delete_desenhos_by_dwg(conn, dwg_name: str) -> int:
+def delete_desenhos_by_dwg(conn, dwg_source: str) -> int:
     """
     Delete all desenhos from a specific DWG file.
     
     Args:
         conn: Database connection
-        dwg_name: Name of the DWG file
+        dwg_source: Name of the DWG source file
         
     Returns:
         Number of desenhos deleted
@@ -463,7 +464,7 @@ def delete_desenhos_by_dwg(conn, dwg_name: str) -> int:
     cursor = conn.cursor()
     
     # Get IDs of desenhos to delete
-    cursor.execute("SELECT id FROM desenhos WHERE dwg_name = ?", (dwg_name,))
+    cursor.execute("SELECT id FROM desenhos WHERE dwg_source = ?", (dwg_source,))
     ids = [row[0] for row in cursor.fetchall()]
     count = len(ids)
     
@@ -473,7 +474,7 @@ def delete_desenhos_by_dwg(conn, dwg_name: str) -> int:
         cursor.execute(f"DELETE FROM revisoes WHERE desenho_id IN ({placeholders})", ids)
         
         # Delete desenhos
-        cursor.execute("DELETE FROM desenhos WHERE dwg_name = ?", (dwg_name,))
+        cursor.execute("DELETE FROM desenhos WHERE dwg_source = ?", (dwg_source,))
     
     conn.commit()
     return count
@@ -491,7 +492,7 @@ def get_db_stats(conn) -> Dict[str, Any]:
     cursor.execute("SELECT COUNT(*) FROM desenhos")
     total_desenhos = cursor.fetchone()[0]
     
-    cursor.execute("SELECT COUNT(DISTINCT dwg_name) FROM desenhos")
+    cursor.execute("SELECT COUNT(DISTINCT dwg_source) FROM desenhos WHERE dwg_source IS NOT NULL AND dwg_source != ''")
     total_dwgs = cursor.fetchone()[0]
     
     dwg_list = get_dwg_list(conn)
@@ -810,21 +811,21 @@ def get_desenho_with_revisoes(conn, desenho_id: int) -> Dict[str, Any]:
     return desenho
 
 
-def get_all_desenhos_with_revisoes(conn, dwg_name: str = None) -> List[Dict[str, Any]]:
+def get_all_desenhos_with_revisoes(conn, dwg_source: str = None) -> List[Dict[str, Any]]:
     """
     Get all desenhos with revisões A-E expanded.
     
     Args:
         conn: Database connection
-        dwg_name: Optional DWG name filter
+        dwg_source: Optional DWG source filter
         
     Returns:
         List of desenhos with all revision fields
     """
     cursor = conn.cursor()
     
-    if dwg_name:
-        cursor.execute("SELECT id FROM desenhos WHERE dwg_name = ?", (dwg_name,))
+    if dwg_source:
+        cursor.execute("SELECT id FROM desenhos WHERE dwg_source = ?", (dwg_source,))
     else:
         cursor.execute("SELECT id FROM desenhos")
     
@@ -1367,7 +1368,7 @@ def get_desenhos_at_date(conn, target_date: str) -> List[Dict[str, Any]]:
     
     # Get all desenhos with project data
     cursor.execute("""
-        SELECT d.id, d.layout_name, d.dwg_name, d.des_num, d.tipo_display, 
+        SELECT d.id, d.layout_name, d.dwg_source, d.des_num, d.tipo_display, 
                d.elemento, d.elemento_key, d.titulo, d.elemento_titulo,
                p.cliente, p.obra, d.data
         FROM desenhos d
@@ -1381,7 +1382,7 @@ def get_desenhos_at_date(conn, target_date: str) -> List[Dict[str, Any]]:
         desenho = {
             'id': row[0],
             'layout_name': row[1],
-            'dwg_name': row[2],
+            'dwg_source': row[2],
             'des_num': row[3],
             'tipo_display': row[4],
             'elemento': row[5],

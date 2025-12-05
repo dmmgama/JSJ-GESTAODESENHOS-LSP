@@ -423,20 +423,31 @@ if selected_page == "Projetos":
     st.title("📂 Gestão de Projetos")
     
     # Display mode selection
-    col_mode1, col_mode2, col_mode3, col_mode4 = st.columns([1, 1, 1, 2])
+    col_mode1, col_mode2, col_mode3, col_mode4, col_mode5 = st.columns([1, 1, 1, 1, 1])
     with col_mode1:
         if st.button("📋 Listar Projetos", use_container_width=True, type="primary" if st.session_state.get('projetos_mode', 'list') == 'list' else "secondary"):
             st.session_state['projetos_mode'] = 'list'
             st.rerun()
     with col_mode2:
+        # Show Ativar Projeto button - needs project selection from session state
+        projeto_para_ativar = st.session_state.get('projeto_selecionado_para_ativar')
+        btn_label = f"✅ Ativar: {projeto_para_ativar}" if projeto_para_ativar else "✅ Ativar Projeto"
+        btn_disabled = not projeto_para_ativar
+        if st.button(btn_label, use_container_width=True, type="primary" if projeto_para_ativar else "secondary", disabled=btn_disabled):
+            if projeto_para_ativar:
+                st.session_state['projeto_ativo'] = projeto_para_ativar
+                st.session_state['projeto_selecionado_para_ativar'] = None
+                st.success(f"Projeto {projeto_para_ativar} ativado!")
+                st.rerun()
+    with col_mode3:
         if st.button("➕ Novo Projeto", use_container_width=True, type="primary" if st.session_state.get('projetos_mode') == 'create' else "secondary"):
             st.session_state['projetos_mode'] = 'create'
             st.rerun()
-    with col_mode3:
+    with col_mode4:
         if st.button("✏️ Editar Projeto", use_container_width=True, type="primary" if st.session_state.get('projetos_mode') == 'edit' else "secondary"):
             st.session_state['projetos_mode'] = 'edit'
             st.rerun()
-    with col_mode4:
+    with col_mode5:
         if st.button("🗑️ Apagar Projeto", use_container_width=True, type="primary" if st.session_state.get('projetos_mode') == 'delete' else "secondary"):
             st.session_state['projetos_mode'] = 'delete'
             st.rerun()
@@ -493,7 +504,6 @@ if selected_page == "Projetos":
             )
             
             st.markdown("---")
-            st.info("💡 **Como ativar um projeto:** Selecione uma linha na tabela acima e clique no botão 'Ativar Projeto' abaixo.")
             
             # Selection handler
             selected_rows = grid_response['selected_rows']
@@ -501,15 +511,13 @@ if selected_page == "Projetos":
                 selected = selected_rows.iloc[0] if isinstance(selected_rows, pd.DataFrame) else selected_rows[0]
                 proj_num = selected['PROJ_NUM']
                 
-                col_sel1, col_sel2 = st.columns([3, 1])
-                with col_sel1:
-                    st.success(f"**✓ Selecionado:** {proj_num} - {selected['PROJ_NOME']}")
-                with col_sel2:
-                    if st.button(f"✅ Ativar Projeto", type="primary", use_container_width=True, key="btn_ativar_projeto"):
-                        st.session_state['projeto_ativo'] = proj_num
-                        st.success(f"Projeto {proj_num} ativado!")
-                        st.rerun()
+                # Store selection for the top menu button
+                st.session_state['projeto_selecionado_para_ativar'] = proj_num
+                
+                st.success(f"**✓ Selecionado:** {proj_num} - {selected['PROJ_NOME']}")
+                st.info("💡 Clique no botão '✅ Ativar Projeto' no menu acima para ativar este projeto.")
             else:
+                st.session_state['projeto_selecionado_para_ativar'] = None
                 st.warning("⚠️ Nenhum projeto selecionado. Clique numa linha da tabela acima.")
     
     # EDIT MODE
@@ -814,8 +822,8 @@ elif selected_page == "Dashboard":
         
         with col_chart4:
             # Distribution by DWG
-            if 'dwg_name' in df.columns:
-                dwg_counts = df['dwg_name'].value_counts()
+            if 'dwg_source' in df.columns:
+                dwg_counts = df['dwg_source'].value_counts()
                 fig_dwg = px.bar(
                     x=dwg_counts.index,
                     y=dwg_counts.values,
@@ -1032,7 +1040,7 @@ elif selected_page == "Gestão de Desenhos":
         all_columns = [
             'id', 'des_num', 'layout_name', 'tipo_display', 'tipo_key', 'elemento', 'elemento_key',
             'titulo', 'r', 'r_data', 'r_desc', 'estado_interno', 'comentario', 'data_limite',
-            'responsavel', 'dwg_name', 'dwg_source', 'cliente', 'obra', 'localizacao',
+            'responsavel', 'dwg_source', 'cliente', 'obra', 'localizacao',
             'especialidade', 'fase', 'projetou', 'escalas', 'data', 'proj_num', 'proj_nome',
             'fase_pfix', 'emissao', 'pfix', 'id_cad', 'created_at', 'updated_at'
         ]
@@ -1040,7 +1048,7 @@ elif selected_page == "Gestão de Desenhos":
         # Default visible columns
         default_visible = [
             'id', 'des_num', 'layout_name', 'tipo_display', 'elemento', 'titulo',
-            'r', 'r_data', 'estado_interno', 'comentario', 'data_limite', 'dwg_name'
+            'r', 'r_data', 'estado_interno', 'comentario', 'data_limite', 'dwg_source'
         ]
         
         # Initialize session state for visible columns
@@ -1125,10 +1133,8 @@ elif selected_page == "Gestão de Desenhos":
             gb.configure_column("data_limite", header_name="Data Limite", width=120)
         if 'responsavel' in aggrid_df.columns:
             gb.configure_column("responsavel", header_name="Responsável", width=150)
-        if 'dwg_name' in aggrid_df.columns:
-            gb.configure_column("dwg_name", header_name="DWG", width=150)
         if 'dwg_source' in aggrid_df.columns:
-            gb.configure_column("dwg_source", header_name="DWG Source", width=150)
+            gb.configure_column("dwg_source", header_name="DWG_SOURCE", width=180)
         if 'proj_num' in aggrid_df.columns:
             gb.configure_column("proj_num", header_name="Proj Nº", width=100)
         if 'proj_nome' in aggrid_df.columns:
@@ -1160,7 +1166,7 @@ elif selected_page == "Gestão de Desenhos":
                     # Define valid columns that exist in the desenhos table
                     # These are the ONLY columns we can update
                     valid_desenho_columns = {
-                        'layout_name', 'dwg_name', 'proj_num', 'proj_nome', 'dwg_source',
+                        'layout_name', 'proj_num', 'proj_nome', 'dwg_source',
                         'fase', 'fase_pfix', 'emissao', 'data', 'escalas', 'pfix',
                         'tipo_display', 'tipo_key', 'elemento', 'titulo', 'elemento_titulo',
                         'elemento_key', 'des_num', 'r', 'r_data', 'r_desc', 'id_cad',
@@ -1208,8 +1214,14 @@ elif selected_page == "Gestão de Desenhos":
                         conn.commit()
                         st.success(f"✅ {changes_made} desenho(s) atualizado(s) com sucesso!")
                         
-                        # Update original data
-                        st.session_state['original_data'] = edited_df.copy()
+                        # Clear original data to force reload from DB
+                        if 'original_data' in st.session_state:
+                            del st.session_state['original_data']
+                        
+                        # Clear filter selections to force refresh with new data
+                        for key in list(st.session_state.keys()):
+                            if key.endswith('_filter_select') or key == 'estado_filter':
+                                del st.session_state[key]
                         
                         # Refresh page
                         st.rerun()
@@ -1264,7 +1276,7 @@ elif selected_page == "Gestão de Desenhos":
                             st.text(f"Elemento: {desenho.get('elemento_key', '-')}")
                             st.text(f"Título: {desenho.get('titulo', '-')}")
                             st.text(f"Revisão: {desenho.get('r', '-')}")
-                            st.text(f"DWG: {desenho.get('dwg_name', '-')}")
+                            st.text(f"DWG_SOURCE: {desenho.get('dwg_source', '-')}")
                         
                         with col_edit:
                             st.markdown("**✏️ Editar Estado:**")
@@ -1624,7 +1636,7 @@ elif selected_page == "Histórico":
                 st.markdown("---")
                 
                 # Display with AgGrid
-                hist_columns = ['des_num', 'layout_name', 'tipo_display', 'elemento', 'titulo', 'r', 'r_data', 'r_desc', 'dwg_name']
+                hist_columns = ['des_num', 'layout_name', 'tipo_display', 'elemento', 'titulo', 'r', 'r_data', 'r_desc', 'dwg_source']
                 hist_df = df_hist[[c for c in hist_columns if c in df_hist.columns]]
                 
                 gb_hist = GridOptionsBuilder.from_dataframe(hist_df)
@@ -1684,19 +1696,43 @@ elif selected_page == "Configurações":
         
         with col_imp2:
             st.subheader("CSV Files")
-            if st.button("📄 Importar CSV", use_container_width=True, type="primary"):
-                with st.spinner("Importando CSV..."):
-                    try:
-                        conn = get_connection()
-                        stats = import_all_csv("data/csv_in", conn)
-                        conn.close()
-                        st.success(
-                            f"✅ Importação CSV concluída!\n\n"
-                            f"Ficheiros: {stats['files_processed']}\n"
-                            f"Desenhos: {stats['desenhos_imported']}"
-                        )
-                    except Exception as e:
-                        st.error(f"❌ Erro: {e}")
+            # Initialize session state for CSV import
+            if 'csv_import_section_key' not in st.session_state:
+                st.session_state['csv_import_section_key'] = 0
+            
+            csv_section_key = f"csv_import_{st.session_state['csv_import_section_key']}"
+            csv_file = st.file_uploader("Escolha ficheiro CSV", type=['csv'], key=csv_section_key)
+            
+            if csv_file is not None:
+                if st.button("📄 Importar CSV Selecionado", use_container_width=True, type="primary"):
+                    with st.spinner(f"Importando {csv_file.name}..."):
+                        try:
+                            # Save uploaded file temporarily
+                            temp_path = Path("data/csv_in") / csv_file.name
+                            temp_path.parent.mkdir(parents=True, exist_ok=True)
+                            with open(temp_path, 'wb') as f:
+                                f.write(csv_file.getbuffer())
+                            
+                            conn = get_connection()
+                            stats = import_single_csv(str(temp_path), conn, target_proj_num=None)
+                            conn.close()
+                            
+                            # Cleanup temp file
+                            if temp_path.exists():
+                                temp_path.unlink()
+                            
+                            st.success(
+                                f"✅ Importação CSV concluída!\n\n"
+                                f"Ficheiro: {csv_file.name}\n"
+                                f"Desenhos: {stats['desenhos_imported']}"
+                            )
+                            # Clear uploader
+                            st.session_state['csv_import_section_key'] += 1
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Erro: {e}")
+            else:
+                st.caption("💡 Selecione um ficheiro CSV para importar")
         
         st.markdown("---")
         
@@ -1872,7 +1908,7 @@ elif selected_page == "Configurações":
         
         with col_db2:
             if db_stats['dwg_list']:
-                dwg_info = ", ".join([f"{d['dwg_name']}({d['count']})" for d in db_stats['dwg_list']])
+                dwg_info = ", ".join([f"{d['dwg_source']}({d['count']})" for d in db_stats['dwg_list']])
                 st.info(f"📁 **DWGs:** {dwg_info}")
         
         style_metric_cards()
@@ -1893,7 +1929,7 @@ elif selected_page == "Configurações":
             
             elif delete_type == "Por DWG":
                 conn = get_connection()
-                dwg_list = [d['dwg_name'] for d in get_dwg_list(conn)]
+                dwg_list = [d['dwg_source'] for d in get_dwg_list(conn)]
                 conn.close()
                 if dwg_list:
                     selected_dwg = st.selectbox("DWG:", dwg_list, key="config_del_dwg")

@@ -44,13 +44,14 @@ def import_json_to_db(json_obj: Dict[str, Any], conn) -> int:
     Import one JSON object into database.
     
     Args:
-        json_obj: Parsed JSON with dwg_name and desenhos[]
+        json_obj: Parsed JSON with dwg_name/dwg_source and desenhos[]
         conn: Database connection
         
     Returns:
         Number of desenhos imported
     """
-    dwg_name = json_obj.get('dwg_name', 'UNKNOWN')
+    # Support both dwg_name and dwg_source for backwards compatibility
+    dwg_source = json_obj.get('dwg_source') or json_obj.get('dwg_name', 'UNKNOWN')
     desenhos = json_obj.get('desenhos', [])
     
     count = 0
@@ -74,7 +75,8 @@ def import_json_to_db(json_obj: Dict[str, Any], conn) -> int:
         # Prepare desenho data
         desenho_data = {
             'layout_name': layout_name,
-            'dwg_name': dwg_name,
+            'dwg_name': dwg_source,  # Keep for DB compatibility
+            'dwg_source': dwg_source,
             'cliente': attributes.get('CLIENTE', ''),
             'obra': attributes.get('OBRA', ''),
             'localizacao': attributes.get('LOCALIZACAO', ''),

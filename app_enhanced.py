@@ -1497,77 +1497,170 @@ elif selected_page == "Gestão de Desenhos":
                 st.rerun()
 
         
-        # Handle selection
+        # Handle selection - Ver Info Desenho button
         selected_rows = grid_response['selected_rows']
+        
+        # Store selected desenho_id in session state when row is selected
         if selected_rows is not None and len(selected_rows) > 0:
-            st.markdown("---")
-            st.subheader(f"📋 Detalhes do Desenho Selecionado")
-            selected = selected_rows.iloc[0] if isinstance(selected_rows, pd.DataFrame) else selected_rows[0]
+            # Get selected row data - handle both DataFrame and list
+            if isinstance(selected_rows, pd.DataFrame):
+                selected = selected_rows.iloc[0]
+                desenho_id = selected.get('id')
+            else:
+                selected = selected_rows[0]
+                desenho_id = selected.get('id')
             
-            # Find original row in df to get ID
-            layout = selected.get('layout_name', '')
-            original_row = filtered_df[filtered_df['layout_name'] == layout]
+            if desenho_id:
+                st.session_state['selected_desenho_id'] = desenho_id
+        
+        # Button row for selected drawing actions
+        st.markdown("---")
+        col_info_btn, col_edit_btn, col_spacer = st.columns([1, 1, 3])
+        
+        has_selection = 'selected_desenho_id' in st.session_state and st.session_state['selected_desenho_id'] is not None
+        
+        with col_info_btn:
+            if st.button("📋 Ver Info Desenho", use_container_width=True, disabled=not has_selection):
+                st.session_state['show_info_dialog'] = True
+        
+        with col_edit_btn:
+            if st.button("✏️ Editar Desenho", use_container_width=True, disabled=not has_selection):
+                st.session_state['show_edit_dialog'] = True
+        
+        # Show info using expander (always visible when triggered)
+        if st.session_state.get('show_info_dialog') and has_selection:
+            desenho_id = st.session_state['selected_desenho_id']
+            conn = get_connection()
+            desenho = get_desenho_by_id(conn, desenho_id)
+            revisoes = get_revisoes_by_desenho_id(conn, desenho_id)
+            conn.close()
             
-            if not original_row.empty:
-                desenho_id = original_row.iloc[0].get('id')
+            if desenho:
+                # Get estado config for color
+                estado_atual = desenho.get('estado_interno') or ESTADO_DEFAULT
+                estado_config = ESTADO_CONFIG.get(estado_atual, ESTADO_CONFIG[ESTADO_DEFAULT])
+                estado_label = estado_config['label']
+                estado_color = estado_config['color']
                 
-                if desenho_id:
-                    conn = get_connection()
-                    desenho = get_desenho_by_id(conn, desenho_id)
-                    revisoes = get_revisoes_by_desenho_id(conn, desenho_id)
-                    conn.close()
+                # Beautiful info card using native Streamlit components
+                st.markdown(f"""
+                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 16px; padding: 4px; margin: 16px 0;">
+                    <div style="background: white; border-radius: 14px; padding: 20px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #eee;">
+                            <div>
+                                <span style="font-size: 0.85em; color: #888; text-transform: uppercase;">📐 DESENHO</span>
+                                <h2 style="margin: 0; color: #333;">{desenho.get('layout_name', '-')}</h2>
+                            </div>
+                            <div style="background: {estado_color}; color: white; padding: 8px 16px; border-radius: 20px; font-weight: 600;">
+                                {estado_label}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Main info using columns
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Prefixo", desenho.get('prefixo', '-'))
+                    st.metric("Elemento", desenho.get('elemento_key', '-'))
+                    st.metric("Layout", desenho.get('layout_name', '-'))
+                with col2:
+                    st.metric("Tipo", desenho.get('tipo_display', '-'))
+                    st.metric("Número", desenho.get('des_num', '-'))
+                    st.metric("DWG Source", desenho.get('dwg_source', '-'))
+                
+                # Title
+                st.info(f"**📝 Título:** {desenho.get('titulo', '-')}")
+                
+                # Data Limite
+                data_limite = desenho.get('data_limite', '')
+                if data_limite:
+                    st.warning(f"**📅 Data Limite:** {data_limite}")
+                
+                # Comentário
+                comentario = desenho.get('comentario', '')
+                if comentario:
+                    st.info(f"**💬 Comentário:** {comentario}")
+                
+                # Revisions table
+                st.markdown("#### 📜 Histórico de Revisões")
+                if revisoes:
+                    rev_data = []
+                    for rev in revisoes:
+                        rev_data.append({
+                            "Rev": rev.get('r', '-'),
+                            "Data": rev.get('data', '-'),
+                            "Autor": rev.get('autor', '-'),
+                            "Alterações": rev.get('alteracoes', '-')
+                        })
+                    st.dataframe(pd.DataFrame(rev_data), use_container_width=True, hide_index=True)
+                else:
+                    st.caption("Sem revisões registadas")
+                
+                # Close button
+                if st.button("❌ Fechar Info", key="close_info_dialog", use_container_width=True):
+                    st.session_state['show_info_dialog'] = False
+                    st.rerun()
+        
+        # Show edit panel
+        if st.session_state.get('show_edit_dialog') and has_selection:
+            desenho_id = st.session_state['selected_desenho_id']
+            conn = get_connection()
+            desenho = get_desenho_by_id(conn, desenho_id)
+            conn.close()
+            
+            if desenho:
+                st.markdown("### ✏️ Editar Estado do Desenho")
+                st.markdown(f"**Desenho:** {desenho.get('layout_name', '-')}")
+                
+                col_edit1, col_edit2 = st.columns([1, 1])
+                
+                with col_edit1:
+                    estado_atual = desenho.get('estado_interno') or ESTADO_DEFAULT
+                    # Ensure estado_atual is a valid option
+                    if estado_atual not in ESTADO_OPTIONS:
+                        estado_atual = ESTADO_DEFAULT
+                    estado_labels = {e: ESTADO_CONFIG[e]['label'] for e in ESTADO_OPTIONS}
                     
-                    if desenho:
-                        col_info, col_edit = st.columns([1, 1])
-                        
-                        with col_info:
-                            st.markdown("**📐 Informação:**")
-                            st.text(f"Layout: {desenho.get('layout_name', '-')}")
-                            st.text(f"DES_NUM: {desenho.get('des_num', '-')}")
-                            st.text(f"Tipo: {desenho.get('tipo_display', '-')}")
-                            st.text(f"Elemento: {desenho.get('elemento_key', '-')}")
-                            st.text(f"Título: {desenho.get('titulo', '-')}")
-                            st.text(f"Revisão: {desenho.get('r', '-')}")
-                            st.text(f"DWG_SOURCE: {desenho.get('dwg_source', '-')}")
-                        
-                        with col_edit:
-                            st.markdown("**✏️ Editar Estado:**")
-                            
-                            estado_atual = desenho.get('estado_interno') or ESTADO_DEFAULT
-                            # Ensure estado_atual is a valid option
-                            if estado_atual not in ESTADO_OPTIONS:
-                                estado_atual = ESTADO_DEFAULT
-                            estado_labels = {e: ESTADO_CONFIG[e]['label'] for e in ESTADO_OPTIONS}
-                            
-                            novo_estado = st.selectbox(
-                                "Estado do Desenho:",
-                                ESTADO_OPTIONS,
-                                index=ESTADO_OPTIONS.index(estado_atual),
-                                format_func=lambda x: estado_labels[x],
-                                key=f"edit_estado_{desenho_id}"
-                            )
-                            
-                            novo_comentario = st.text_area(
-                                "Comentário:",
-                                value=desenho.get('comentario') or '',
-                                height=100,
-                                key=f"edit_comentario_{desenho_id}"
-                            )
-                            
-                            if st.button("💾 Guardar", type="primary", use_container_width=True):
-                                conn = get_connection()
-                                success = update_estado_e_comentario(
-                                    conn, desenho_id,
-                                    estado=novo_estado,
-                                    comentario=novo_comentario,
-                                    data_limite=None,
-                                    responsavel=None,
-                                    autor="Streamlit User"
-                                )
-                                conn.close()
-                                if success:
-                                    st.success("✅ Guardado!")
-                                    st.rerun()
+                    novo_estado = st.selectbox(
+                        "Estado do Desenho:",
+                        ESTADO_OPTIONS,
+                        index=ESTADO_OPTIONS.index(estado_atual),
+                        format_func=lambda x: estado_labels[x],
+                        key=f"edit_estado_{desenho_id}"
+                    )
+                
+                with col_edit2:
+                    novo_comentario = st.text_area(
+                        "Comentário:",
+                        value=desenho.get('comentario') or '',
+                        height=100,
+                        key=f"edit_comentario_{desenho_id}"
+                    )
+                
+                col_save_edit, col_cancel_edit = st.columns([1, 1])
+                with col_save_edit:
+                    if st.button("💾 Guardar", type="primary", use_container_width=True, key="save_edit_btn"):
+                        conn = get_connection()
+                        success = update_estado_e_comentario(
+                            conn, desenho_id,
+                            estado=novo_estado,
+                            comentario=novo_comentario,
+                            data_limite=None,
+                            responsavel=None,
+                            autor="Streamlit User"
+                        )
+                        conn.close()
+                        if success:
+                            st.success("✅ Guardado!")
+                            st.session_state['show_edit_dialog'] = False
+                            st.rerun()
+                
+                with col_cancel_edit:
+                    if st.button("❌ Cancelar", use_container_width=True, key="cancel_edit_btn"):
+                        st.session_state['show_edit_dialog'] = False
+                        st.rerun()
         
         # Export buttons
         st.markdown("---")

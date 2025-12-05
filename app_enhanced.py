@@ -3,6 +3,7 @@ Streamlit app - UI for JSJ Drawing Management LPP Sync (Enhanced Version).
 """
 import streamlit as st
 import pandas as pd
+import time
 from pathlib import Path
 from datetime import datetime, date
 
@@ -22,7 +23,9 @@ from db import (
     get_all_layout_names, update_estado_interno, update_estado_e_comentario,
     get_historico_comentarios, get_desenhos_by_estado, get_desenhos_em_atraso,
     get_desenho_by_id, get_stats_by_estado, ESTADOS_VALIDOS,
-    get_unique_revision_dates, get_desenhos_at_date
+    get_unique_revision_dates, get_desenhos_at_date,
+    delete_desenho_by_id, delete_desenhos_by_ids, delete_desenhos_by_projeto_and_dwg_source,
+    delete_desenhos_by_projeto_and_pfix, delete_all_desenhos_by_projeto
 )
 from db_projects import (
     get_all_projetos, get_projeto_by_num, upsert_projeto, delete_projeto,
@@ -32,6 +35,112 @@ from db_projects import (
 from json_importer import import_all_json
 from csv_importer import import_all_csv, import_single_csv
 from lpp_builder import build_lpp_from_db
+import io
+
+# ========================================
+# CSV EXPORT FUNCTION
+# ========================================
+CSV_EXPORT_HEADERS = [
+    'PROJ_NUM', 'PROJ_NOME', 'CLIENTE', 'OBRA', 'LOCALIZACAO', 'ESPECIALIDADE', 
+    'PROJETOU', 'FASE', 'FASE_PFIX', 'EMISSAO', 'DATA', 'PFIX', 'LAYOUT', 
+    'DES_NUM', 'TIPO', 'ELEMENTO', 'TITULO', 'REV_A', 'DATA_A', 'DESC_A', 
+    'REV_B', 'DATA_B', 'DESC_B', 'REV_C', 'DATA_C', 'DESC_C', 'REV_D', 
+    'DATA_D', 'DESC_D', 'REV_E', 'DATA_E', 'DESC_E', 'DWG_SOURCE', 'ID_CAD'
+]
+
+def export_desenhos_to_csv(desenhos_with_revisoes: list, proj_num: str = None) -> str:
+    """
+    Export desenhos to CSV string in the standard format.
+    
+    Args:
+        desenhos_with_revisoes: List of desenho dicts with revision fields expanded
+        proj_num: Project number (for filename, optional)
+    
+    Returns:
+        CSV content as string
+    """
+    lines = [';'.join(CSV_EXPORT_HEADERS)]
+    
+    for d in desenhos_with_revisoes:
+        row = [
+            d.get('proj_num', '') or '',
+            d.get('proj_nome', '') or '',
+            d.get('cliente', '') or '',
+            d.get('obra', '') or '',
+            d.get('localizacao', '') or '',
+            d.get('especialidade', '') or '',
+            d.get('projetou', '') or '',
+            d.get('fase', '') or '',
+            d.get('fase_pfix', '') or '',
+            d.get('emissao', '') or '',
+            d.get('data', '') or '',
+            d.get('pfix', '') or '',
+            d.get('layout_name', '') or '',
+            d.get('des_num', '') or '',
+            d.get('tipo_display', '') or '',
+            d.get('elemento', '') or '',
+            d.get('titulo', '') or '',
+            d.get('rev_a', '') or '',
+            d.get('data_a', '') or '',
+            d.get('desc_a', '') or '',
+            d.get('rev_b', '') or '',
+            d.get('data_b', '') or '',
+            d.get('desc_b', '') or '',
+            d.get('rev_c', '') or '',
+            d.get('data_c', '') or '',
+            d.get('desc_c', '') or '',
+            d.get('rev_d', '') or '',
+            d.get('data_d', '') or '',
+            d.get('desc_d', '') or '',
+            d.get('rev_e', '') or '',
+            d.get('data_e', '') or '',
+            d.get('desc_e', '') or '',
+            d.get('dwg_source', '') or '',
+            d.get('id_cad', '') or ''
+        ]
+        lines.append(';'.join(str(v) for v in row))
+    
+    return '\n'.join(lines)
+
+
+def get_desenhos_by_dwg_source_with_revisoes(conn, dwg_source: str) -> list:
+    """Get desenhos for a specific DWG source with revisions expanded."""
+    from db import get_desenho_with_revisoes
+    
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT d.id FROM desenhos d
+        WHERE d.dwg_source = ?
+        ORDER BY d.des_num
+    """, (dwg_source,))
+    
+    result = []
+    for row in cursor.fetchall():
+        desenho = get_desenho_with_revisoes(conn, row[0])
+        if desenho:
+            result.append(desenho)
+    
+    return result
+
+
+def get_all_desenhos_with_revisoes_sorted(conn) -> list:
+    """Get all desenhos with revisions, sorted by DWG_SOURCE."""
+    from db import get_desenho_with_revisoes
+    
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT d.id FROM desenhos d
+        ORDER BY d.dwg_source, d.des_num
+    """)
+    
+    result = []
+    for row in cursor.fetchall():
+        desenho = get_desenho_with_revisoes(conn, row[0])
+        if desenho:
+            result.append(desenho)
+    
+    return result
+
 
 # Estado interno colors and labels
 ESTADO_CONFIG = {
@@ -792,49 +901,24 @@ elif selected_page == "Gestão de Desenhos":
         # Filters
         st.markdown("### 🔍 Filtros")
         
-        # Project and DWG Source filters
-        col_proj, col_dwg = st.columns(2)
+        # Check if project is active - filter data by active project
+        projeto_ativo = st.session_state.get('projeto_ativo')
+        if not projeto_ativo:
+            st.warning("⚠️ Nenhum projeto ativo. Selecione um projeto no menu 'Projetos' para ver os desenhos.")
+            st.stop()
         
-        with col_proj:
-            conn = get_connection()
-            projetos = get_all_projetos(conn)
-            conn.close()
-            
-            projeto_options = ["Todos"]
-            if projetos:
-                projeto_options += [f"{p['proj_num']} - {p['proj_nome']}" for p in projetos]
-            
-            # Get default index based on active project
-            default_idx = 0
-            if st.session_state.get('projeto_ativo'):
-                for idx, opt in enumerate(projeto_options):
-                    if opt.startswith(st.session_state['projeto_ativo']):
-                        default_idx = idx
-                        break
-            
-            projeto_filter_label = st.selectbox(
-                "📂 PROJETO", 
-                projeto_options,
-                index=default_idx,
-                key="projeto_filter_select"
-            )
-            
-            # Extract proj_num from selection
-            if projeto_filter_label != "Todos":
-                projeto_filter = projeto_filter_label.split(" - ")[0]
-            else:
-                projeto_filter = "Todos"
+        # Filter df by active project
+        if 'proj_num' in df.columns:
+            df = df[df['proj_num'] == projeto_ativo]
         
-        with col_dwg:
-            if projeto_filter != "Todos":
-                conn = get_connection()
-                dwg_sources = get_unique_dwg_sources(conn, projeto_filter)
-                conn.close()
-                dwg_options = ["Todos"] + [d for d in dwg_sources if d]
-            else:
-                dwg_options = ["Todos"]
-            
-            dwg_filter = st.selectbox("📁 DWG SOURCE", dwg_options, key="dwg_filter_select")
+        if df.empty:
+            st.warning(f"⚠️ Nenhum desenho encontrado para o projeto {projeto_ativo}.")
+            st.stop()
+        
+        # Get DWG sources for active project only
+        conn = get_connection()
+        dwg_sources_proj = get_unique_dwg_sources(conn, projeto_ativo)
+        conn.close()
         
         # Estado filter buttons
         estado_col1, estado_col2, estado_col3, estado_col4, estado_col5 = st.columns(5)
@@ -868,35 +952,44 @@ elif selected_page == "Gestão de Desenhos":
                 st.session_state.estado_filter = 'em_atraso'
                 st.rerun()
         
-        # Other filters
-        col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+        # Dropdown filters - Order: Ficheiro DWG, Prefixo, Tipo de Desenho, Elemento, Revisão
+        col_f1, col_f2, col_f3, col_f4, col_f5 = st.columns(5)
         
         with col_f1:
-            tipo_options = ["Todos"] + sorted(df['tipo_display'].dropna().unique().tolist())
-            tipo_filter = st.selectbox("TIPO", tipo_options)
+            dwg_options = ["Todos"] + [d for d in dwg_sources_proj if d]
+            dwg_filter = st.selectbox("Ficheiro DWG", dwg_options, key="dwg_filter_select")
         
         with col_f2:
-            elemento_options = ["Todos"] + sorted(df['elemento_key'].dropna().unique().tolist())
-            elemento_filter = st.selectbox("ELEMENTO", elemento_options)
+            pfix_options = ["Todos"] + sorted([p for p in df['pfix'].dropna().unique().tolist() if p])
+            pfix_filter = st.selectbox("Prefixo", pfix_options, key="pfix_filter_select")
         
         with col_f3:
-            r_options = ["Todos"] + sorted(df['r'].dropna().unique().tolist())
-            r_filter = st.selectbox("Revisão (R)", r_options)
+            tipo_options = ["Todos"] + sorted(df['tipo_display'].dropna().unique().tolist())
+            tipo_filter = st.selectbox("Tipo de Desenho", tipo_options)
         
         with col_f4:
-            search_text = st.text_input("🔎 Procurar", "")
+            elemento_options = ["Todos"] + sorted(df['elemento_key'].dropna().unique().tolist())
+            elemento_filter = st.selectbox("Elemento", elemento_options)
+        
+        with col_f5:
+            r_options = ["Todos"] + sorted([r for r in df['r'].dropna().unique().tolist() if r])
+            r_filter = st.selectbox("Revisão", r_options)
+        
+        # Search box
+        search_text = st.text_input("🔎 Procurar", "", key="search_desenhos")
         
         # Apply filters
         filtered_df = df.copy()
         
-        # Apply project and DWG filters
-        if projeto_filter != "Todos":
-            if 'proj_num' in filtered_df.columns:
-                filtered_df = filtered_df[filtered_df['proj_num'] == projeto_filter]
-        
+        # Apply DWG filter
         if dwg_filter != "Todos":
             if 'dwg_source' in filtered_df.columns:
                 filtered_df = filtered_df[filtered_df['dwg_source'] == dwg_filter]
+        
+        # Apply PFIX filter
+        if pfix_filter != "Todos":
+            if 'pfix' in filtered_df.columns:
+                filtered_df = filtered_df[filtered_df['pfix'] == pfix_filter]
         
         if st.session_state.estado_filter == 'em_atraso':
             today = datetime.now().strftime('%Y-%m-%d')
@@ -1064,6 +1157,21 @@ elif selected_page == "Gestão de Desenhos":
                 if grid_response['data'] is not None:
                     edited_df = pd.DataFrame(grid_response['data'])
                     
+                    # Define valid columns that exist in the desenhos table
+                    # These are the ONLY columns we can update
+                    valid_desenho_columns = {
+                        'layout_name', 'dwg_name', 'proj_num', 'proj_nome', 'dwg_source',
+                        'fase', 'fase_pfix', 'emissao', 'data', 'escalas', 'pfix',
+                        'tipo_display', 'tipo_key', 'elemento', 'titulo', 'elemento_titulo',
+                        'elemento_key', 'des_num', 'r', 'r_data', 'r_desc', 'id_cad',
+                        'raw_attributes', 'estado_interno', 'comentario', 'data_limite', 'responsavel'
+                    }
+                    
+                    # Columns to exclude from update (virtual/derived columns from JOIN)
+                    excluded_columns = {'id', 'estado_interno_display', 'cliente', 'obra', 
+                                       'localizacao', 'especialidade', 'projetou', 
+                                       'created_at', 'updated_at'}
+                    
                     # Compare with original and update database
                     changes_made = 0
                     errors = []
@@ -1076,10 +1184,11 @@ elif selected_page == "Gestão de Desenhos":
                             if 'id' in row and pd.notna(row['id']):
                                 desenho_id = int(row['id'])
                                 
-                                # Build update dict with all editable fields
+                                # Build update dict with only valid editable fields
                                 update_fields = {}
                                 for col in edited_df.columns:
-                                    if col != 'id' and col != 'estado_interno_display':
+                                    # Only include columns that exist in desenhos table and not excluded
+                                    if col in valid_desenho_columns and col not in excluded_columns:
                                         value = row[col]
                                         # Convert NaN to None
                                         if pd.isna(value):
@@ -1194,15 +1303,267 @@ elif selected_page == "Gestão de Desenhos":
                                     st.success("✅ Guardado!")
                                     st.rerun()
         
-        # Export button
+        # Export buttons
         st.markdown("---")
-        csv_export = aggrid_df.to_csv(sep=';', index=False).encode('utf-8-sig')
-        st.download_button(
-            label="📥 Download CSV Filtrado",
-            data=csv_export,
-            file_name=f"desenhos_filtrados_{datetime.now().strftime('%Y%m%d')}.csv",
-            mime="text/csv"
-        )
+        st.markdown("### 📥 Exportar Dados")
+        
+        col_exp1, col_exp2, col_exp3 = st.columns([1, 1, 2])
+        
+        # Download CSV Filtrado
+        with col_exp1:
+            csv_export = aggrid_df.to_csv(sep=';', index=False).encode('utf-8-sig')
+            st.download_button(
+                label="📥 Download CSV Filtrado",
+                data=csv_export,
+                file_name=f"desenhos_filtrados_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        
+        # Download CSV Completo
+        with col_exp2:
+            # Build options for selectbox - only for active project
+            export_options = ["-- Selecione --"]
+            if dwg_sources_proj:
+                export_options += dwg_sources_proj
+            export_options += ["📦 Todos DWG Separados", "📋 Todos DWG Juntos"]
+            
+            export_choice = st.selectbox(
+                "CSV Completo - Escolha:",
+                export_options,
+                key="csv_export_select",
+                label_visibility="collapsed"
+            )
+        
+        with col_exp3:
+            if export_choice and export_choice != "-- Selecione --":
+                today_str = datetime.now().strftime('%Y-%m-%d')
+                
+                if export_choice == "📦 Todos DWG Separados":
+                    # Generate ZIP with multiple CSVs
+                    import zipfile
+                    
+                    # Create ZIP in memory
+                    zip_buffer = io.BytesIO()
+                    conn = get_connection()
+                    
+                    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+                        for dwg in dwg_sources_proj:
+                            desenhos_dwg = get_desenhos_by_dwg_source_with_revisoes(conn, dwg)
+                            # Filter by project
+                            desenhos_dwg = [d for d in desenhos_dwg if d.get('proj_num') == projeto_ativo]
+                            if desenhos_dwg:
+                                csv_content = export_desenhos_to_csv(desenhos_dwg)
+                                # Clean DWG name for filename
+                                dwg_clean = dwg.replace('.dwg', '').replace('.DWG', '')
+                                filename = f"{dwg_clean}-LD-{today_str}.csv"
+                                zf.writestr(filename, csv_content.encode('utf-8-sig'))
+                    
+                    conn.close()
+                    zip_buffer.seek(0)
+                    
+                    zip_filename = f"{projeto_ativo}-LD-SEPARADOS-{today_str}.zip"
+                    
+                    st.download_button(
+                        label="📥 Download ZIP (Separados)",
+                        data=zip_buffer.getvalue(),
+                        file_name=zip_filename,
+                        mime="application/zip",
+                        key="download_zip_separated",
+                        use_container_width=True
+                    )
+                
+                elif export_choice == "📋 Todos DWG Juntos":
+                    # Generate single CSV with all DWGs for active project
+                    conn = get_connection()
+                    desenhos_all = get_all_desenhos_with_revisoes_sorted(conn)
+                    conn.close()
+                    
+                    # Filter by active project
+                    desenhos_all = [d for d in desenhos_all if d.get('proj_num') == projeto_ativo]
+                    
+                    if desenhos_all:
+                        csv_content = export_desenhos_to_csv(desenhos_all)
+                        filename = f"{projeto_ativo}-LD-COMPLETA-{today_str}.csv"
+                        
+                        st.download_button(
+                            label="📥 Download CSV Completo",
+                            data=csv_content.encode('utf-8-sig'),
+                            file_name=filename,
+                            mime="text/csv",
+                            use_container_width=True,
+                            key="download_csv_all"
+                        )
+                    else:
+                        st.warning("Nenhum desenho para exportar.")
+                
+                else:
+                    # Single DWG source
+                    conn = get_connection()
+                    desenhos_dwg = get_desenhos_by_dwg_source_with_revisoes(conn, export_choice)
+                    conn.close()
+                    
+                    # Filter by active project
+                    desenhos_dwg = [d for d in desenhos_dwg if d.get('proj_num') == projeto_ativo]
+                    
+                    if desenhos_dwg:
+                        csv_content = export_desenhos_to_csv(desenhos_dwg)
+                        dwg_clean = export_choice.replace('.dwg', '').replace('.DWG', '')
+                        filename = f"{dwg_clean}-LD-{today_str}.csv"
+                        
+                        st.download_button(
+                            label="📥 Download CSV",
+                            data=csv_content.encode('utf-8-sig'),
+                            file_name=filename,
+                            mime="text/csv",
+                            use_container_width=True,
+                            key="download_csv_single"
+                        )
+                    else:
+                        st.warning(f"Nenhum desenho encontrado para {export_choice}.")
+
+        # ========================================
+        # DELETE DESENHOS SECTION
+        # ========================================
+        st.markdown("---")
+        st.markdown("### 🗑️ Eliminar Desenhos")
+        
+        with st.expander("⚠️ Opções de Eliminação", expanded=False):
+            st.warning("**Atenção:** As operações de eliminação são irreversíveis!")
+            
+            # Option 1: Delete selected rows
+            st.markdown("#### 1️⃣ Eliminar Selecionados na Tabela")
+            selected_rows_for_delete = grid_response['selected_rows']
+            if selected_rows_for_delete is not None and len(selected_rows_for_delete) > 0:
+                if isinstance(selected_rows_for_delete, pd.DataFrame):
+                    selected_ids = selected_rows_for_delete['id'].tolist() if 'id' in selected_rows_for_delete.columns else []
+                else:
+                    selected_ids = [r.get('id') for r in selected_rows_for_delete if r.get('id')]
+                
+                selected_count = len(selected_ids)
+                st.info(f"📋 **{selected_count} desenho(s) selecionado(s)**")
+                
+                if st.button(f"🗑️ Eliminar {selected_count} Selecionado(s)", type="primary", key="btn_delete_selected"):
+                    if st.session_state.get('confirm_delete_selected'):
+                        conn = get_connection()
+                        deleted = delete_desenhos_by_ids(conn, selected_ids)
+                        conn.close()
+                        st.success(f"✅ {deleted} desenho(s) eliminado(s)!")
+                        st.session_state['confirm_delete_selected'] = False
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.session_state['confirm_delete_selected'] = True
+                        st.warning("⚠️ Clique novamente para confirmar a eliminação!")
+            else:
+                st.caption("💡 Selecione desenhos na tabela acima usando as checkboxes")
+            
+            st.markdown("---")
+            
+            # Option 2: Delete by PFIX
+            st.markdown("#### 2️⃣ Eliminar por PFIX")
+            col_pfix1, col_pfix2 = st.columns([2, 1])
+            
+            with col_pfix1:
+                # Get unique PFIX values for the active project
+                conn = get_connection()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT DISTINCT pfix FROM desenhos 
+                    WHERE proj_num = ? AND pfix IS NOT NULL AND pfix != '' 
+                    ORDER BY pfix
+                """, (projeto_ativo,))
+                pfix_options = [row[0] for row in cursor.fetchall()]
+                conn.close()
+                
+                if pfix_options:
+                    selected_pfix = st.selectbox(
+                        "Escolha o PFIX:",
+                        ["-- Selecione --"] + pfix_options,
+                        key="delete_pfix_select"
+                    )
+                else:
+                    selected_pfix = None
+                    st.caption("Nenhum PFIX encontrado no projeto ativo")
+            
+            with col_pfix2:
+                if selected_pfix and selected_pfix != "-- Selecione --":
+                    if st.button(f"🗑️ Eliminar PFIX: {selected_pfix}", type="secondary", key="btn_delete_pfix"):
+                        if st.session_state.get('confirm_delete_pfix'):
+                            conn = get_connection()
+                            deleted = delete_desenhos_by_projeto_and_pfix(conn, projeto_ativo, selected_pfix)
+                            conn.close()
+                            st.success(f"✅ {deleted} desenho(s) eliminado(s) com PFIX '{selected_pfix}'!")
+                            st.session_state['confirm_delete_pfix'] = False
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.session_state['confirm_delete_pfix'] = True
+                            st.warning("⚠️ Clique novamente para confirmar!")
+            
+            st.markdown("---")
+            
+            # Option 3: Delete by DWG_Source
+            st.markdown("#### 3️⃣ Eliminar por DWG_Source")
+            col_dwg1, col_dwg2 = st.columns([2, 1])
+            
+            with col_dwg1:
+                if dwg_sources_proj:
+                    selected_dwg_source = st.selectbox(
+                        "Escolha o DWG_Source:",
+                        ["-- Selecione --"] + dwg_sources_proj,
+                        key="delete_dwg_source_select"
+                    )
+                else:
+                    selected_dwg_source = None
+                    st.caption("Nenhum DWG_Source encontrado no projeto ativo")
+            
+            with col_dwg2:
+                if selected_dwg_source and selected_dwg_source != "-- Selecione --":
+                    if st.button(f"🗑️ Eliminar DWG: {selected_dwg_source[:20]}...", type="secondary", key="btn_delete_dwg_source"):
+                        if st.session_state.get('confirm_delete_dwg_source'):
+                            conn = get_connection()
+                            deleted = delete_desenhos_by_projeto_and_dwg_source(conn, projeto_ativo, selected_dwg_source)
+                            conn.close()
+                            st.success(f"✅ {deleted} desenho(s) eliminado(s) do DWG '{selected_dwg_source}'!")
+                            st.session_state['confirm_delete_dwg_source'] = False
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.session_state['confirm_delete_dwg_source'] = True
+                            st.warning("⚠️ Clique novamente para confirmar!")
+            
+            st.markdown("---")
+            
+            # Option 4: Delete ALL from project
+            st.markdown("#### 4️⃣ Eliminar TODOS os Desenhos do Projeto")
+            st.error(f"**⚠️ PERIGO:** Esta opção eliminará TODOS os desenhos do projeto **{projeto_ativo}**!")
+            
+            # Get count
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM desenhos WHERE proj_num = ?", (projeto_ativo,))
+            total_desenhos_projeto = cursor.fetchone()[0]
+            conn.close()
+            
+            st.info(f"📊 Total de desenhos no projeto: **{total_desenhos_projeto}**")
+            
+            # Require typing project number to confirm
+            confirm_text = st.text_input(
+                f"Digite '{projeto_ativo}' para confirmar:",
+                key="confirm_delete_all_input"
+            )
+            
+            if st.button("🗑️ ELIMINAR TODOS DO PROJETO", type="primary", key="btn_delete_all"):
+                if confirm_text == projeto_ativo:
+                    conn = get_connection()
+                    deleted = delete_all_desenhos_by_projeto(conn, projeto_ativo)
+                    conn.close()
+                    st.success(f"✅ {deleted} desenho(s) eliminado(s) do projeto {projeto_ativo}!")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error(f"❌ Digite '{projeto_ativo}' corretamente para confirmar a eliminação.")
 
 # ========================================
 # PAGE: HISTÓRICO
@@ -1341,7 +1702,9 @@ elif selected_page == "Configurações":
         
         # Upload CSV directly with project selection
         st.subheader("📤 Upload CSV com Seleção de Projeto")
-        uploaded_csv = st.file_uploader("Escolha um ficheiro CSV", type=['csv'], key="csv_uploader_main")
+        # Use dynamic key to allow clearing the uploader after import
+        csv_uploader_key = f"csv_uploader_main_{st.session_state.get('csv_file_uploader_key', 0)}"
+        uploaded_csv = st.file_uploader("Escolha um ficheiro CSV", type=['csv'], key=csv_uploader_key)
         
         if uploaded_csv is not None:
             # Initialize session state for CSV import if not exists
@@ -1386,12 +1749,22 @@ elif selected_page == "Configurações":
                             conn = get_connection()
                             stats = import_single_csv(str(temp_path), conn, target_proj_num=None)
                             conn.close()
+                            
+                            # Clean up: delete temp file after import
+                            if temp_path.exists():
+                                temp_path.unlink()
+                            
                             st.success(f"✅ Importado! Desenhos: {stats['desenhos_imported']}")
-                            # Reset state
+                            # Reset state and clear uploader
                             st.session_state['csv_import_mode'] = None
+                            if 'csv_uploader_main' in st.session_state:
+                                del st.session_state['csv_uploader_main']
                             st.rerun()
                         except Exception as e:
                             st.error(f"❌ Erro: {e}")
+                            # Clean up on error too
+                            if temp_path.exists():
+                                temp_path.unlink()
             
             elif st.session_state.get('csv_import_mode') == 'existing':
                 st.success("✓ Modo: **Adicionar a Projeto Existente**")
@@ -1428,11 +1801,18 @@ elif selected_page == "Configurações":
                                     stats = import_single_csv(str(temp_path), conn, target_proj_num=target_proj_num)
                                     conn.close()
                                     st.success(f"✅ Importado para projeto {target_proj_num}! Desenhos: {stats['desenhos_imported']}")
-                                    # Reset state
+                                    # Cleanup temp file
+                                    if temp_path.exists():
+                                        temp_path.unlink()
+                                    # Reset state and clear file uploader
                                     st.session_state['csv_import_mode'] = None
+                                    st.session_state['csv_file_uploader_key'] = st.session_state.get('csv_file_uploader_key', 0) + 1
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"❌ Erro: {e}")
+                                    # Cleanup temp file even on error
+                                    if temp_path.exists():
+                                        temp_path.unlink()
             else:
                 st.info("💡 Escolha um modo acima para continuar")
     

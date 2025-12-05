@@ -592,6 +592,139 @@ def delete_desenho_by_layout(conn, layout_name: str) -> int:
     return 0
 
 
+def delete_desenho_by_id(conn, desenho_id: int) -> int:
+    """
+    Delete a single desenho by ID.
+    
+    Args:
+        conn: Database connection
+        desenho_id: ID of the desenho
+        
+    Returns:
+        Number of desenhos deleted (0 or 1)
+    """
+    cursor = conn.cursor()
+    
+    # Delete revisoes for this desenho
+    cursor.execute("DELETE FROM revisoes WHERE desenho_id = ?", (desenho_id,))
+    # Delete desenho
+    cursor.execute("DELETE FROM desenhos WHERE id = ?", (desenho_id,))
+    
+    count = cursor.rowcount
+    conn.commit()
+    return count
+
+
+def delete_desenhos_by_ids(conn, desenho_ids: list) -> int:
+    """
+    Delete multiple desenhos by their IDs.
+    
+    Args:
+        conn: Database connection
+        desenho_ids: List of desenho IDs
+        
+    Returns:
+        Number of desenhos deleted
+    """
+    if not desenho_ids:
+        return 0
+        
+    cursor = conn.cursor()
+    placeholders = ','.join('?' * len(desenho_ids))
+    
+    # Delete revisoes for these desenhos
+    cursor.execute(f"DELETE FROM revisoes WHERE desenho_id IN ({placeholders})", desenho_ids)
+    # Delete desenhos
+    cursor.execute(f"DELETE FROM desenhos WHERE id IN ({placeholders})", desenho_ids)
+    
+    count = cursor.rowcount
+    conn.commit()
+    return count
+
+
+def delete_desenhos_by_projeto_and_dwg_source(conn, proj_num: str, dwg_source: str) -> int:
+    """
+    Delete all desenhos from a specific DWG source within a project.
+    
+    Args:
+        conn: Database connection
+        proj_num: Project number
+        dwg_source: DWG source filename
+        
+    Returns:
+        Number of desenhos deleted
+    """
+    cursor = conn.cursor()
+    
+    # Get IDs of desenhos to delete
+    cursor.execute("SELECT id FROM desenhos WHERE proj_num = ? AND dwg_source = ?", (proj_num, dwg_source))
+    ids = [row[0] for row in cursor.fetchall()]
+    count = len(ids)
+    
+    if ids:
+        placeholders = ','.join('?' * len(ids))
+        cursor.execute(f"DELETE FROM revisoes WHERE desenho_id IN ({placeholders})", ids)
+        cursor.execute(f"DELETE FROM desenhos WHERE id IN ({placeholders})", ids)
+    
+    conn.commit()
+    return count
+
+
+def delete_desenhos_by_projeto_and_pfix(conn, proj_num: str, pfix: str) -> int:
+    """
+    Delete all desenhos with a specific PFIX within a project.
+    
+    Args:
+        conn: Database connection
+        proj_num: Project number
+        pfix: Prefix value
+        
+    Returns:
+        Number of desenhos deleted
+    """
+    cursor = conn.cursor()
+    
+    # Get IDs of desenhos to delete
+    cursor.execute("SELECT id FROM desenhos WHERE proj_num = ? AND pfix = ?", (proj_num, pfix))
+    ids = [row[0] for row in cursor.fetchall()]
+    count = len(ids)
+    
+    if ids:
+        placeholders = ','.join('?' * len(ids))
+        cursor.execute(f"DELETE FROM revisoes WHERE desenho_id IN ({placeholders})", ids)
+        cursor.execute(f"DELETE FROM desenhos WHERE id IN ({placeholders})", ids)
+    
+    conn.commit()
+    return count
+
+
+def delete_all_desenhos_by_projeto(conn, proj_num: str) -> int:
+    """
+    Delete ALL desenhos from a specific project.
+    
+    Args:
+        conn: Database connection
+        proj_num: Project number
+        
+    Returns:
+        Number of desenhos deleted
+    """
+    cursor = conn.cursor()
+    
+    # Get IDs of desenhos to delete
+    cursor.execute("SELECT id FROM desenhos WHERE proj_num = ?", (proj_num,))
+    ids = [row[0] for row in cursor.fetchall()]
+    count = len(ids)
+    
+    if ids:
+        placeholders = ','.join('?' * len(ids))
+        cursor.execute(f"DELETE FROM revisoes WHERE desenho_id IN ({placeholders})", ids)
+        cursor.execute("DELETE FROM desenhos WHERE proj_num = ?", (proj_num,))
+    
+    conn.commit()
+    return count
+
+
 def get_unique_tipos(conn) -> List[str]:
     """Get list of unique tipo_display values."""
     cursor = conn.cursor()

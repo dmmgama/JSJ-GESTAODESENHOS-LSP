@@ -37,6 +37,10 @@ def criar_tabela_projetos(conn):
             localizacao TEXT,
             especialidade TEXT,
             projetou TEXT,
+            fase TEXT,
+            fase_pfix TEXT,
+            emissao TEXT,
+            data TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -87,10 +91,35 @@ def criar_indices_v42(conn):
     conn.commit()
 
 
+def adicionar_colunas_projetos_v43(conn):
+    """
+    Add V43 columns to projetos table if they don't exist.
+    Safe migration function - skips if columns already exist.
+    """
+    cursor = conn.cursor()
+    
+    migration_columns = [
+        ("fase", "TEXT"),
+        ("fase_pfix", "TEXT"),
+        ("emissao", "TEXT"),
+        ("data", "TEXT"),
+    ]
+    
+    for col_name, col_type in migration_columns:
+        try:
+            cursor.execute(f"ALTER TABLE projetos ADD COLUMN {col_name} {col_type}")
+            print(f"✓ Added column to projetos: {col_name}")
+        except sqlite3.OperationalError:
+            # Column already exists, skip
+            pass
+    
+    conn.commit()
+
+
 def inicializar_multiproject():
     """
     Initialize all multi-project database structures.
-    Call this once when upgrading to V42.
+    Call this once when upgrading to V42+.
     
     Returns:
         Dict with migration status
@@ -104,9 +133,13 @@ def inicializar_multiproject():
         criar_tabela_projetos(conn)
         print("✓ Tabela 'projetos' criada/verificada")
         
-        # Add new columns to desenhos
+        # Add new columns to desenhos (V42)
         print("\nAdicionando colunas ao 'desenhos'...")
         adicionar_colunas_v42(conn)
+        
+        # Add V43 columns to projetos (fase, fase_pfix, emissao, data)
+        print("\nAdicionando colunas V43 ao 'projetos'...")
+        adicionar_colunas_projetos_v43(conn)
         
         # Create indexes
         criar_indices_v42(conn)
@@ -165,6 +198,10 @@ def upsert_projeto(conn, projeto_data: Dict[str, Any]) -> int:
                 localizacao = ?,
                 especialidade = ?,
                 projetou = ?,
+                fase = ?,
+                fase_pfix = ?,
+                emissao = ?,
+                data = ?,
                 updated_at = ?
             WHERE id = ?
         """, (
@@ -174,6 +211,10 @@ def upsert_projeto(conn, projeto_data: Dict[str, Any]) -> int:
             projeto_data.get('localizacao', ''),
             projeto_data.get('especialidade', ''),
             projeto_data.get('projetou', ''),
+            projeto_data.get('fase', ''),
+            projeto_data.get('fase_pfix', ''),
+            projeto_data.get('emissao', ''),
+            projeto_data.get('data', ''),
             datetime.now().isoformat(),
             projeto_id
         ))
@@ -182,8 +223,9 @@ def upsert_projeto(conn, projeto_data: Dict[str, Any]) -> int:
         cursor.execute("""
             INSERT INTO projetos (
                 proj_num, proj_nome, cliente, obra, localizacao,
-                especialidade, projetou, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                especialidade, projetou, fase, fase_pfix, emissao, data,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             projeto_data['proj_num'],
             projeto_data.get('proj_nome', ''),
@@ -192,6 +234,10 @@ def upsert_projeto(conn, projeto_data: Dict[str, Any]) -> int:
             projeto_data.get('localizacao', ''),
             projeto_data.get('especialidade', ''),
             projeto_data.get('projetou', ''),
+            projeto_data.get('fase', ''),
+            projeto_data.get('fase_pfix', ''),
+            projeto_data.get('emissao', ''),
+            projeto_data.get('data', ''),
             datetime.now().isoformat(),
             datetime.now().isoformat()
         ))

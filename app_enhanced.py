@@ -103,6 +103,144 @@ def export_desenhos_to_csv(desenhos_with_revisoes: list, proj_num: str = None) -
     return '\n'.join(lines)
 
 
+# ========================================
+# PROJECT CSV EXPORT/IMPORT (V43)
+# ========================================
+PROJECT_CSV_HEADERS = ['PROJ_NUM', 'PROJ_NOME', 'CLIENTE', 'OBRA', 'LOCALIZACAO', 
+                       'ESPECIALIDADE', 'PROJETOU', 'FASE', 'FASE_PFIX', 'EMISSAO', 'DATA']
+
+def export_projeto_to_csv(projeto: dict) -> bytes:
+    """
+    Export project data to CSV bytes with BOM for Excel compatibility.
+    
+    Args:
+        projeto: Dictionary with project fields
+    
+    Returns:
+        CSV content as bytes (UTF-8 with BOM for Excel)
+    """
+    header = ';'.join(PROJECT_CSV_HEADERS)
+    data = ';'.join([
+        projeto.get('proj_num', '') or '',
+        projeto.get('proj_nome', '') or '',
+        projeto.get('cliente', '') or '',
+        projeto.get('obra', '') or '',
+        projeto.get('localizacao', '') or '',
+        projeto.get('especialidade', '') or '',
+        projeto.get('projetou', '') or '',
+        projeto.get('fase', '') or '',
+        projeto.get('fase_pfix', '') or '',
+        projeto.get('emissao', '') or '',
+        projeto.get('data', '') or ''
+    ])
+    csv_str = f"{header}\n{data}"
+    # Add BOM (Byte Order Mark) for Excel to recognize UTF-8
+    return ('\ufeff' + csv_str).encode('utf-8')
+
+
+def decode_csv_bytes(raw_bytes: bytes) -> str:
+    """
+    Decode CSV bytes trying multiple encodings for compatibility.
+    Handles files from Excel (Windows-1252) and UTF-8 with/without BOM.
+    
+    Args:
+        raw_bytes: Raw bytes from uploaded file
+    
+    Returns:
+        Decoded string content
+    """
+    # Try encodings in order of likelihood
+    encodings = ['utf-8-sig', 'utf-8', 'cp1252', 'latin-1', 'iso-8859-1']
+    
+    for encoding in encodings:
+        try:
+            return raw_bytes.decode(encoding)
+        except (UnicodeDecodeError, LookupError):
+            continue
+    
+    # Last resort: decode with errors replaced
+    return raw_bytes.decode('utf-8', errors='replace')
+
+
+def parse_projeto_csv(csv_content: str) -> dict:
+    """
+    Parse project CSV content and return project data dict.
+    
+    Args:
+        csv_content: CSV string content (with header and data row)
+    
+    Returns:
+        Dictionary with project fields, or None if invalid
+    """
+    try:
+        # Remove BOM if present
+        if csv_content.startswith('\ufeff'):
+            csv_content = csv_content[1:]
+        lines = csv_content.strip().split('\n')
+        if len(lines) < 2:
+            return None
+        
+        # Parse header
+        headers = [h.strip().upper() for h in lines[0].split(';')]
+        values = lines[1].split(';')
+        
+        # Map to dict
+        projeto_data = {}
+        for i, header in enumerate(headers):
+            if i < len(values):
+                val = values[i].strip() if i < len(values) else ''
+                # Map header to field name (lowercase)
+                field_map = {
+                    'PROJ_NUM': 'proj_num',
+                    'PROJ_NOME': 'proj_nome',
+                    'CLIENTE': 'cliente',
+                    'OBRA': 'obra',
+                    'LOCALIZACAO': 'localizacao',
+                    'ESPECIALIDADE': 'especialidade',
+                    'PROJETOU': 'projetou',
+                    'FASE': 'fase',
+                    'FASE_PFIX': 'fase_pfix',
+                    'EMISSAO': 'emissao',
+                    'DATA': 'data'
+                }
+                if header in field_map:
+                    projeto_data[field_map[header]] = val
+        
+        return projeto_data if projeto_data.get('proj_num') else None
+    except Exception:
+        return None
+
+
+def display_projeto_info(projeto: dict):
+    """
+    Display project information in standardized format with headers.
+    
+    Args:
+        projeto: Dictionary with project fields
+    """
+    st.markdown("#### 📋 DADOS DE PROJETO")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown(f"**1. Número de Projeto:** {projeto.get('proj_num', '-') or '-'}")
+        st.markdown(f"**2. Nome do Projeto:** {projeto.get('proj_nome', '-') or '-'}")
+        st.markdown(f"**3. Cliente:** {projeto.get('cliente', '-') or '-'}")
+        st.markdown(f"**4. Tipo de Obra:** {projeto.get('obra', '-') or '-'}")
+    with col2:
+        st.markdown(f"**5. Localização:** {projeto.get('localizacao', '-') or '-'}")
+        st.markdown(f"**6. Especialidades:** {projeto.get('especialidade', '-') or '-'}")
+        st.markdown(f"**7. Projetistas:** {projeto.get('projetou', '-') or '-'}")
+    
+    st.markdown("---")
+    st.markdown("#### 📆 FASE DE PROJETO ATUAL")
+    col3, col4 = st.columns(2)
+    with col3:
+        st.markdown(f"**1. Fase de Projeto Atual:** {projeto.get('fase', '-') or '-'}")
+        st.markdown(f"**2. Emissão Atual dos Desenhos:** {projeto.get('emissao', '-') or '-'}")
+    with col4:
+        st.markdown(f"**3. Data de Emissão Atual:** {projeto.get('data', '-') or '-'}")
+        st.markdown(f"**4. Prefixo de Fase:** {projeto.get('fase_pfix', '-') or '-'}")
+
+
 def get_desenhos_by_dwg_source_with_revisoes(conn, dwg_source: str) -> list:
     """Get desenhos for a specific DWG source with revisions expanded."""
     from db import get_desenho_with_revisoes
@@ -564,22 +702,66 @@ if selected_page == "Projetos":
                 if projeto:
                     st.info(f"📊 Este projeto tem **{stats['total_desenhos']} desenhos** associados.")
                     
+                    # Import/Export buttons
+                    col_ie1, col_ie2, col_ie3 = st.columns([1, 1, 2])
+                    with col_ie1:
+                        uploaded_csv = st.file_uploader("📥 Importar CSV", type=['csv'], key="edit_import_csv", 
+                                                        help="Importar dados de projeto de um CSV")
+                    with col_ie2:
+                        # Export button
+                        csv_content = export_projeto_to_csv(projeto)
+                        today_str = datetime.now().strftime("%Y%m%d")
+                        filename = f"{projeto['proj_num']}-DadosProjeto-{today_str}.csv"
+                        st.download_button(
+                            label="📤 Exportar CSV",
+                            data=csv_content,
+                            file_name=filename,
+                            mime="text/csv",
+                            use_container_width=True
+                        )
+                    
+                    # Handle CSV import
+                    if uploaded_csv is not None:
+                        csv_text = decode_csv_bytes(uploaded_csv.read())
+                        imported_data = parse_projeto_csv(csv_text)
+                        if imported_data:
+                            st.success("✅ CSV carregado! Os campos abaixo foram preenchidos com os dados importados.")
+                            # Store in session state to prefill form
+                            st.session_state['edit_imported_data'] = imported_data
+                            st.rerun()
+                        else:
+                            st.error("❌ CSV inválido. Verifique o formato.")
+                    
+                    # Get imported data if available
+                    imported = st.session_state.get('edit_imported_data', {})
+                    
                     with st.form("edit_projeto"):
-                        st.markdown("#### Dados do Projeto")
+                        st.markdown("#### 📋 DADOS DE PROJETO")
                         st.caption("⚠️ PROJ_NUM é o identificador único e não pode ser alterado.")
                         
                         col1, col2 = st.columns(2)
                         
                         with col1:
-                            st.text_input("PROJ_NUM", value=projeto['proj_num'], disabled=True, help="Identificador único do projeto - não editável")
-                            edit_proj_nome = st.text_input("PROJ_NOME", value=projeto['proj_nome'] or '', help="Nome do projeto")
-                            edit_cliente = st.text_input("CLIENTE", value=projeto['cliente'] or '', help="Nome do cliente")
-                            edit_obra = st.text_input("OBRA", value=projeto['obra'] or '', help="Nome da obra")
+                            st.text_input("1. Número de Projeto (PROJ_NUM)", value=projeto['proj_num'], disabled=True, help="Identificador único do projeto - não editável")
+                            edit_proj_nome = st.text_input("2. Nome do Projeto (PROJ_NOME)", value=imported.get('proj_nome') or projeto['proj_nome'] or '', help="Nome do projeto")
+                            edit_cliente = st.text_input("3. Cliente (CLIENTE)", value=imported.get('cliente') or projeto['cliente'] or '', help="Nome do cliente")
+                            edit_obra = st.text_input("4. Tipo de Obra (OBRA)", value=imported.get('obra') or projeto['obra'] or '', help="Tipo de obra")
                         
                         with col2:
-                            edit_localizacao = st.text_input("LOCALIZAÇÃO", value=projeto['localizacao'] or '')
-                            edit_especialidade = st.text_input("ESPECIALIDADE", value=projeto['especialidade'] or '')
-                            edit_projetou = st.text_input("PROJETOU", value=projeto['projetou'] or '')
+                            edit_localizacao = st.text_input("5. Localização (LOCALIZACAO)", value=imported.get('localizacao') or projeto['localizacao'] or '')
+                            edit_especialidade = st.text_input("6. Especialidades (ESPECIALIDADE)", value=imported.get('especialidade') or projeto['especialidade'] or '')
+                            edit_projetou = st.text_input("7. Projetistas (PROJETOU)", value=imported.get('projetou') or projeto['projetou'] or '')
+                        
+                        st.markdown("---")
+                        st.markdown("#### 📆 FASE DE PROJETO ATUAL")
+                        
+                        col3, col4 = st.columns(2)
+                        with col3:
+                            edit_fase = st.text_input("1. Fase de Projeto Atual (FASE)", value=imported.get('fase') or projeto.get('fase') or '')
+                            edit_emissao = st.text_input("2. Emissão Atual dos Desenhos (EMISSAO)", value=imported.get('emissao') or projeto.get('emissao') or '')
+                        with col4:
+                            edit_data = st.text_input("3. Data de Emissão Atual (DATA)", value=imported.get('data') or projeto.get('data') or '')
+                            edit_fase_pfix = st.text_input("4. Prefixo de Fase (FASE_PFIX)", value=imported.get('fase_pfix') or projeto.get('fase_pfix') or '')
                         
                         col_submit1, col_submit2 = st.columns([1, 3])
                         with col_submit1:
@@ -587,10 +769,11 @@ if selected_page == "Projetos":
                         with col_submit2:
                             if st.form_submit_button("❌ Cancelar", use_container_width=True):
                                 st.session_state['projetos_mode'] = 'list'
+                                st.session_state.pop('edit_imported_data', None)
                                 st.rerun()
                         
                         if submitted:
-                            # Update project data
+                            # Update project data (only projetos table, NOT desenhos)
                             projeto_data = {
                                 'proj_num': selected_proj_num,
                                 'proj_nome': edit_proj_nome,
@@ -598,7 +781,11 @@ if selected_page == "Projetos":
                                 'obra': edit_obra,
                                 'localizacao': edit_localizacao,
                                 'especialidade': edit_especialidade,
-                                'projetou': edit_projetou
+                                'projetou': edit_projetou,
+                                'fase': edit_fase,
+                                'fase_pfix': edit_fase_pfix,
+                                'emissao': edit_emissao,
+                                'data': edit_data
                             }
                             
                             try:
@@ -606,6 +793,7 @@ if selected_page == "Projetos":
                                 upsert_projeto(conn, projeto_data)
                                 conn.close()
                                 
+                                st.session_state.pop('edit_imported_data', None)
                                 st.success(f"✅ Projeto {selected_proj_num} atualizado com sucesso!")
                                 st.session_state['projetos_mode'] = 'list'
                                 st.rerun()
@@ -639,18 +827,7 @@ if selected_page == "Projetos":
                 
                 if projeto:
                     st.markdown("---")
-                    st.markdown("#### 📋 Dados do Projeto Selecionado:")
-                    
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.markdown(f"**PROJ_NUM:** {projeto['proj_num']}")
-                        st.markdown(f"**PROJ_NOME:** {projeto['proj_nome'] or '-'}")
-                        st.markdown(f"**CLIENTE:** {projeto['cliente'] or '-'}")
-                        st.markdown(f"**OBRA:** {projeto['obra'] or '-'}")
-                    with col2:
-                        st.markdown(f"**LOCALIZAÇÃO:** {projeto['localizacao'] or '-'}")
-                        st.markdown(f"**ESPECIALIDADE:** {projeto['especialidade'] or '-'}")
-                        st.markdown(f"**PROJETOU:** {projeto['projetou'] or '-'}")
+                    display_projeto_info(projeto)
                     
                     st.markdown("---")
                     st.error(f"🚨 **Serão apagados {stats['total_desenhos']} desenhos** de {stats['dwg_sources_count']} ficheiros DWG!")
@@ -692,19 +869,48 @@ if selected_page == "Projetos":
     elif st.session_state['projetos_mode'] == 'create':
         st.markdown("### ➕ Criar Novo Projeto")
         
+        # Import CSV option
+        uploaded_csv = st.file_uploader("📥 Importar dados de CSV (opcional)", type=['csv'], key="create_import_csv",
+                                        help="Carregue um CSV para preencher automaticamente os campos do projeto")
+        
+        # Handle CSV import
+        if uploaded_csv is not None:
+            csv_text = decode_csv_bytes(uploaded_csv.read())
+            imported_data = parse_projeto_csv(csv_text)
+            if imported_data:
+                st.success("✅ CSV carregado! Os campos abaixo foram preenchidos com os dados importados.")
+                st.session_state['create_imported_data'] = imported_data
+                st.rerun()
+            else:
+                st.error("❌ CSV inválido. Verifique o formato.")
+        
+        # Get imported data if available
+        imported = st.session_state.get('create_imported_data', {})
+        
         with st.form("create_projeto"):
+            st.markdown("#### 📋 DADOS DE PROJETO")
             col1, col2 = st.columns(2)
             
             with col1:
-                proj_num = st.text_input("PROJ_NUM *", help="Número único do projeto (ex: 669)")
-                proj_nome = st.text_input("Nome do Projeto")
-                cliente = st.text_input("Cliente")
-                obra = st.text_input("Obra")
+                proj_num = st.text_input("1. Número de Projeto (PROJ_NUM) *", value=imported.get('proj_num', ''), help="Número único do projeto (ex: 669)")
+                proj_nome = st.text_input("2. Nome do Projeto (PROJ_NOME)", value=imported.get('proj_nome', ''))
+                cliente = st.text_input("3. Cliente (CLIENTE)", value=imported.get('cliente', ''))
+                obra = st.text_input("4. Tipo de Obra (OBRA)", value=imported.get('obra', ''))
             
             with col2:
-                localizacao = st.text_input("Localização")
-                especialidade = st.text_input("Especialidade", value="ESTRUTURAS")
-                projetou = st.text_input("Projetou")
+                localizacao = st.text_input("5. Localização (LOCALIZACAO)", value=imported.get('localizacao', ''))
+                especialidade = st.text_input("6. Especialidades (ESPECIALIDADE)", value=imported.get('especialidade', 'ESTRUTURAS'))
+                projetou = st.text_input("7. Projetistas (PROJETOU)", value=imported.get('projetou', ''))
+            
+            st.markdown("---")
+            st.markdown("#### 📆 FASE DE PROJETO ATUAL")
+            col3, col4 = st.columns(2)
+            with col3:
+                fase = st.text_input("1. Fase de Projeto Atual (FASE)", value=imported.get('fase', ''))
+                emissao = st.text_input("2. Emissão Atual dos Desenhos (EMISSAO)", value=imported.get('emissao', ''))
+            with col4:
+                data_proj = st.text_input("3. Data de Emissão Atual (DATA)", value=imported.get('data', ''))
+                fase_pfix = st.text_input("4. Prefixo de Fase (FASE_PFIX)", value=imported.get('fase_pfix', ''))
             
             col_submit1, col_submit2 = st.columns([1, 3])
             with col_submit1:
@@ -712,6 +918,7 @@ if selected_page == "Projetos":
             with col_submit2:
                 if st.form_submit_button("❌ Cancelar", use_container_width=True):
                     st.session_state['projetos_mode'] = 'list'
+                    st.session_state.pop('create_imported_data', None)
                     st.rerun()
             
             if submitted:
@@ -725,7 +932,11 @@ if selected_page == "Projetos":
                         'obra': obra,
                         'localizacao': localizacao,
                         'especialidade': especialidade,
-                        'projetou': projetou
+                        'projetou': projetou,
+                        'fase': fase,
+                        'fase_pfix': fase_pfix,
+                        'emissao': emissao,
+                        'data': data_proj
                     }
                     
                     try:
@@ -733,6 +944,7 @@ if selected_page == "Projetos":
                         upsert_projeto(conn, projeto_data)
                         conn.close()
                         
+                        st.session_state.pop('create_imported_data', None)
                         st.success(f"✅ Projeto {proj_num} criado com sucesso!")
                         st.session_state['projetos_mode'] = 'list'
                         st.rerun()

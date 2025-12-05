@@ -467,7 +467,7 @@
   (while loop
     (textscr)
     (princ "\n\n==============================================")
-    (princ "\n          GESTAO DESENHOS JSJ V41.0          ")
+    (princ "\n          GESTAO DESENHOS JSJ V42.0          ")
     (princ "\n==============================================")
     (princ "\n 1. Modificar Legendas")
     (princ "\n 2. Exportar Lista de Desenhos")
@@ -493,7 +493,7 @@
       ((= opt nil) (setq loop nil))))
   
   (graphscr)
-  (princ "\nGestao Desenhos JSJ V41 Terminada.")
+  (princ "\nGestao Desenhos JSJ V42 Terminada.")
   (princ)
 )
 
@@ -685,6 +685,185 @@
   (princ)
 )
 
+;; Exportar Dados Gerais (nova opção 4)
+(defun ExportarDadosGerais ( / doc path projNum csvFile fileDes blk
+                               projNome cliente obra localizacao especialidade projetou
+                               fase fasePfix emissao data)
+  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
+  (setq path (getvar "DWGPREFIX"))
+  
+  (princ "\n\n=== EXPORTAR DADOS GERAIS ===")
+  (princ "\nExporta apenas os dados de projeto, fase e emissão.\n")
+  
+  ;; Recolher dados do primeiro desenho (exceto TEMPLATE)
+  (vlax-for lay (vla-get-Layouts doc)
+    (if (and (not projNum)
+             (/= (vla-get-ModelType lay) :vlax-true)
+             (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
+      (vlax-for blk (vla-get-Block lay)
+        (if (and (not projNum) (IsTargetBlock blk))
+          (progn
+            (setq projNum (GetAttValue blk "PROJ_NUM"))
+            (setq projNome (GetAttValue blk "PROJ_NOME"))
+            (setq cliente (GetAttValue blk "CLIENTE"))
+            (setq obra (GetAttValue blk "OBRA"))
+            (setq localizacao (GetAttValue blk "LOCALIZACAO"))
+            (setq especialidade (GetAttValue blk "ESPECIALIDADE"))
+            (setq projetou (GetAttValue blk "PROJETOU"))
+            (setq fase (GetAttValue blk "FASE"))
+            (setq fasePfix (GetAttValue blk "FASE_PFIX"))
+            (setq emissao (GetAttValue blk "EMISSAO"))
+            (setq data (GetAttValue blk "DATA")))))))
+  
+  (if (not projNum)
+    (progn
+      (alert "Nenhum desenho encontrado para recolher dados.")
+      (princ "\nOperação cancelada."))
+    (progn
+      ;; Mostrar dados a exportar
+      (princ "\n\nDados a exportar:")
+      (princ (strcat "\n  PROJ_NUM: " projNum))
+      (princ (strcat "\n  PROJ_NOME: " projNome))
+      (princ (strcat "\n  CLIENTE: " cliente))
+      (princ (strcat "\n  OBRA: " obra))
+      (princ (strcat "\n  LOCALIZACAO: " localizacao))
+      (princ (strcat "\n  ESPECIALIDADE: " especialidade))
+      (princ (strcat "\n  PROJETOU: " projetou))
+      (princ (strcat "\n  FASE: " fase))
+      (princ (strcat "\n  FASE_PFIX: " fasePfix))
+      (princ (strcat "\n  EMISSAO: " emissao))
+      (princ (strcat "\n  DATA: " data))
+      
+      ;; Nome do ficheiro: PROJ_NUM-DadosProjeto.csv
+      (setq csvFile (getfiled "Guardar Dados Gerais" 
+                              (strcat path projNum "-DadosProjeto.csv") 
+                              "csv" 1))
+      
+      (if csvFile
+        (progn
+          (setq fileDes (open csvFile "w"))
+          (if fileDes
+            (progn
+              ;; Header completo
+              (write-line "PROJ_NUM;PROJ_NOME;CLIENTE;OBRA;LOCALIZACAO;ESPECIALIDADE;PROJETOU;FASE;FASE_PFIX;EMISSAO;DATA;PFIX;LAYOUT;DES_NUM;TIPO;ELEMENTO;TITULO;REV_A;DATA_A;DESC_A;REV_B;DATA_B;DESC_B;REV_C;DATA_C;DESC_C;REV_D;DATA_D;DESC_D;REV_E;DATA_E;DESC_E;DWG_SOURCE;ID_CAD" fileDes)
+              
+              ;; Linha de dados: só os 11 primeiros preenchidos, resto vazio
+              (write-line (strcat 
+                projNum ";" 
+                projNome ";" 
+                cliente ";" 
+                obra ";" 
+                localizacao ";" 
+                especialidade ";" 
+                projetou ";" 
+                fase ";" 
+                fasePfix ";" 
+                emissao ";" 
+                data ";" 
+                ";;;;;;;;;;;;;;;;;;;;;;;;") fileDes)
+              
+              (close fileDes)
+              (WriteLog (strcat "EXPORT DADOS GERAIS: " csvFile))
+              (alert (strcat "Dados gerais exportados!\n\nFicheiro: " csvFile)))
+            (alert "Erro ao criar ficheiro.")))
+        (princ "\nCancelado."))))
+  (princ)
+)
+
+;; Importar Dados Gerais (nova opção 5)
+(defun ImportarDadosGerais ( / doc csvFile fileDes line fields confirma count
+                               projNum projNome cliente obra localizacao especialidade projetou
+                               fase fasePfix emissao data)
+  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
+  
+  (princ "\n\n=== IMPORTAR DADOS GERAIS ===")
+  (princ "\nSelecione o ficheiro CSV com os dados gerais.\n")
+  
+  ;; Pedir ficheiro CSV
+  (setq csvFile (getfiled "Selecionar CSV Dados Gerais" "" "csv" 0))
+  
+  (if (not csvFile)
+    (princ "\nOperação cancelada.")
+    (progn
+      (setq fileDes (open csvFile "r"))
+      (if (not fileDes)
+        (alert "Erro ao abrir ficheiro.")
+        (progn
+          ;; Ler header (ignorar)
+          (read-line fileDes)
+          
+          ;; Ler primeira linha de dados
+          (setq line (read-line fileDes))
+          (close fileDes)
+          
+          (if (not line)
+            (alert "Ficheiro vazio ou sem dados.")
+            (progn
+              ;; Separar campos por ;
+              (setq fields (ParseCSVLine line ";"))
+              
+              ;; Extrair os 11 campos
+              (setq projNum (nth 0 fields))
+              (setq projNome (nth 1 fields))
+              (setq cliente (nth 2 fields))
+              (setq obra (nth 3 fields))
+              (setq localizacao (nth 4 fields))
+              (setq especialidade (nth 5 fields))
+              (setq projetou (nth 6 fields))
+              (setq fase (nth 7 fields))
+              (setq fasePfix (nth 8 fields))
+              (setq emissao (nth 9 fields))
+              (setq data (nth 10 fields))
+              
+              ;; Mostrar dados e pedir confirmação
+              (princ "\n\nDados a importar:")
+              (princ (strcat "\n  PROJ_NUM: " projNum))
+              (princ (strcat "\n  PROJ_NOME: " projNome))
+              (princ (strcat "\n  CLIENTE: " cliente))
+              (princ (strcat "\n  OBRA: " obra))
+              (princ (strcat "\n  LOCALIZACAO: " localizacao))
+              (princ (strcat "\n  ESPECIALIDADE: " especialidade))
+              (princ (strcat "\n  PROJETOU: " projetou))
+              (princ (strcat "\n  FASE: " fase))
+              (princ (strcat "\n  FASE_PFIX: " fasePfix))
+              (princ (strcat "\n  EMISSAO: " emissao))
+              (princ (strcat "\n  DATA: " data))
+              
+              (princ "\n\nConfirmar importação?")
+              (initget "Sim Nao")
+              (setq confirma (getkword "\n[Sim/Nao] <Sim>: "))
+              
+              (if (or (= confirma "Sim") (= confirma nil))
+                (progn
+                  (princ "\nA aplicar dados a todos os desenhos (incluindo TEMPLATE)...")
+                  (setq count 0)
+                  
+                  (vlax-for lay (vla-get-Layouts doc)
+                    (if (/= (vla-get-ModelType lay) :vlax-true)
+                      (vlax-for blk (vla-get-Block lay)
+                        (if (IsTargetBlock blk)
+                          (progn
+                            (if (/= projNum "") (UpdateSingleTag (vla-get-Handle blk) "PROJ_NUM" projNum))
+                            (if (/= projNome "") (UpdateSingleTag (vla-get-Handle blk) "PROJ_NOME" projNome))
+                            (if (/= cliente "") (UpdateSingleTag (vla-get-Handle blk) "CLIENTE" cliente))
+                            (if (/= obra "") (UpdateSingleTag (vla-get-Handle blk) "OBRA" obra))
+                            (if (/= localizacao "") (UpdateSingleTag (vla-get-Handle blk) "LOCALIZACAO" localizacao))
+                            (if (/= especialidade "") (UpdateSingleTag (vla-get-Handle blk) "ESPECIALIDADE" especialidade))
+                            (if (/= projetou "") (UpdateSingleTag (vla-get-Handle blk) "PROJETOU" projetou))
+                            (if (/= fase "") (UpdateSingleTag (vla-get-Handle blk) "FASE" fase))
+                            (if (/= fasePfix "") (UpdateSingleTag (vla-get-Handle blk) "FASE_PFIX" fasePfix))
+                            (if (/= emissao "") (UpdateSingleTag (vla-get-Handle blk) "EMISSAO" emissao))
+                            (if (/= data "") (UpdateSingleTag (vla-get-Handle blk) "DATA" data))
+                            (UpdateTabName (vla-get-Handle blk))
+                            (setq count (1+ count)))))))
+                  
+                  (vla-Regen doc acActiveViewport)
+                  (WriteLog (strcat "IMPORT DADOS GERAIS: " (itoa count) " desenhos atualizados"))
+                  (alert (strcat "Dados importados com sucesso!\n\n" (itoa count) " desenhos atualizados.")))
+                (princ "\nImportação cancelada.")))))))
+  (princ)
+)
+
 ;; ============================================================================
 ;; SECÇÃO 9: SUBMENU 4 - DADOS DO PROJETO (NOVO)
 ;; ============================================================================
@@ -697,8 +876,8 @@
     (princ "\n   1. Definir Dados do Projeto")
     (princ "\n   2. Definir Fase")
     (princ "\n   3. Definir Emissao")
-    (princ "\n   4. Exportar Dados Gerais")
-    (princ "\n   5. Importar Dados Gerais")
+    (princ "\n   4. Exportar Dados do Projeto")
+    (princ "\n   5. Importar Dados do Projeto")
     (princ "\n   9. Navegar (ver desenho)")
     (princ "\n   0. Voltar")
     (initget "1 2 3 4 5 9 0")
@@ -887,185 +1066,6 @@
       (alert (strcat "Emissão atualizada!\n\n" (itoa count) " desenhos afetados."
                      (if (= zerarRevs "Sim") (strcat "\nRevisões apagadas em " (itoa countRev) " desenhos.") ""))))
     (princ "\nCancelado - valores vazios."))
-  (princ)
-)
-
-;; Exportar Dados Gerais (nova opção 4)
-(defun ExportarDadosGerais ( / doc path projNum csvFile fileDes blk
-                               projNome cliente obra localizacao especialidade projetou
-                               fase fasePfix emissao data)
-  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
-  (setq path (getvar "DWGPREFIX"))
-  
-  (princ "\n\n=== EXPORTAR DADOS GERAIS ===")
-  (princ "\nExporta apenas os dados de projeto, fase e emissão.\n")
-  
-  ;; Recolher dados do primeiro desenho (exceto TEMPLATE)
-  (vlax-for lay (vla-get-Layouts doc)
-    (if (and (not projNum)
-             (/= (vla-get-ModelType lay) :vlax-true)
-             (/= (strcase (vla-get-Name lay)) "TEMPLATE"))
-      (vlax-for blk (vla-get-Block lay)
-        (if (and (not projNum) (IsTargetBlock blk))
-          (progn
-            (setq projNum (GetAttValue blk "PROJ_NUM"))
-            (setq projNome (GetAttValue blk "PROJ_NOME"))
-            (setq cliente (GetAttValue blk "CLIENTE"))
-            (setq obra (GetAttValue blk "OBRA"))
-            (setq localizacao (GetAttValue blk "LOCALIZACAO"))
-            (setq especialidade (GetAttValue blk "ESPECIALIDADE"))
-            (setq projetou (GetAttValue blk "PROJETOU"))
-            (setq fase (GetAttValue blk "FASE"))
-            (setq fasePfix (GetAttValue blk "FASE_PFIX"))
-            (setq emissao (GetAttValue blk "EMISSAO"))
-            (setq data (GetAttValue blk "DATA")))))))
-  
-  (if (not projNum)
-    (progn
-      (alert "Nenhum desenho encontrado para recolher dados.")
-      (princ "\nOperação cancelada."))
-    (progn
-      ;; Mostrar dados a exportar
-      (princ "\n\nDados a exportar:")
-      (princ (strcat "\n  PROJ_NUM: " projNum))
-      (princ (strcat "\n  PROJ_NOME: " projNome))
-      (princ (strcat "\n  CLIENTE: " cliente))
-      (princ (strcat "\n  OBRA: " obra))
-      (princ (strcat "\n  LOCALIZACAO: " localizacao))
-      (princ (strcat "\n  ESPECIALIDADE: " especialidade))
-      (princ (strcat "\n  PROJETOU: " projetou))
-      (princ (strcat "\n  FASE: " fase))
-      (princ (strcat "\n  FASE_PFIX: " fasePfix))
-      (princ (strcat "\n  EMISSAO: " emissao))
-      (princ (strcat "\n  DATA: " data))
-      
-      ;; Nome do ficheiro: PROJ_NUM-DadosProjeto.csv
-      (setq csvFile (getfiled "Guardar Dados Gerais" 
-                              (strcat path projNum "-DadosProjeto.csv") 
-                              "csv" 1))
-      
-      (if csvFile
-        (progn
-          (setq fileDes (open csvFile "w"))
-          (if fileDes
-            (progn
-              ;; Header completo
-              (write-line "PROJ_NUM;PROJ_NOME;CLIENTE;OBRA;LOCALIZACAO;ESPECIALIDADE;PROJETOU;FASE;FASE_PFIX;EMISSAO;DATA;PFIX;LAYOUT;DES_NUM;TIPO;ELEMENTO;TITULO;REV_A;DATA_A;DESC_A;REV_B;DATA_B;DESC_B;REV_C;DATA_C;DESC_C;REV_D;DATA_D;DESC_D;REV_E;DATA_E;DESC_E;DWG_SOURCE;ID_CAD" fileDes)
-              
-              ;; Linha de dados: só os 11 primeiros preenchidos, resto vazio
-              (write-line (strcat 
-                projNum ";" 
-                projNome ";" 
-                cliente ";" 
-                obra ";" 
-                localizacao ";" 
-                especialidade ";" 
-                projetou ";" 
-                fase ";" 
-                fasePfix ";" 
-                emissao ";" 
-                data ";" 
-                ";;;;;;;;;;;;;;;;;;;;;;;;") fileDes)
-              
-              (close fileDes)
-              (WriteLog (strcat "EXPORT DADOS GERAIS: " csvFile))
-              (alert (strcat "Dados gerais exportados!\n\nFicheiro: " csvFile)))
-            (alert "Erro ao criar ficheiro.")))
-        (princ "\nCancelado."))))
-  (princ)
-)
-
-;; Importar Dados Gerais (nova opção 5)
-(defun ImportarDadosGerais ( / doc csvFile fileDes line fields confirma count
-                               projNum projNome cliente obra localizacao especialidade projetou
-                               fase fasePfix emissao data)
-  (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
-  
-  (princ "\n\n=== IMPORTAR DADOS GERAIS ===")
-  (princ "\nSelecione o ficheiro CSV com os dados gerais.\n")
-  
-  ;; Pedir ficheiro CSV
-  (setq csvFile (getfiled "Selecionar CSV Dados Gerais" "" "csv" 0))
-  
-  (if (not csvFile)
-    (princ "\nOperação cancelada.")
-    (progn
-      (setq fileDes (open csvFile "r"))
-      (if (not fileDes)
-        (alert "Erro ao abrir ficheiro.")
-        (progn
-          ;; Ler header (ignorar)
-          (read-line fileDes)
-          
-          ;; Ler primeira linha de dados
-          (setq line (read-line fileDes))
-          (close fileDes)
-          
-          (if (not line)
-            (alert "Ficheiro vazio ou sem dados.")
-            (progn
-              ;; Separar campos por ;
-              (setq fields (ParseCSVLine line ";"))
-              
-              ;; Extrair os 11 campos
-              (setq projNum (nth 0 fields))
-              (setq projNome (nth 1 fields))
-              (setq cliente (nth 2 fields))
-              (setq obra (nth 3 fields))
-              (setq localizacao (nth 4 fields))
-              (setq especialidade (nth 5 fields))
-              (setq projetou (nth 6 fields))
-              (setq fase (nth 7 fields))
-              (setq fasePfix (nth 8 fields))
-              (setq emissao (nth 9 fields))
-              (setq data (nth 10 fields))
-              
-              ;; Mostrar dados e pedir confirmação
-              (princ "\n\nDados a importar:")
-              (princ (strcat "\n  PROJ_NUM: " projNum))
-              (princ (strcat "\n  PROJ_NOME: " projNome))
-              (princ (strcat "\n  CLIENTE: " cliente))
-              (princ (strcat "\n  OBRA: " obra))
-              (princ (strcat "\n  LOCALIZACAO: " localizacao))
-              (princ (strcat "\n  ESPECIALIDADE: " especialidade))
-              (princ (strcat "\n  PROJETOU: " projetou))
-              (princ (strcat "\n  FASE: " fase))
-              (princ (strcat "\n  FASE_PFIX: " fasePfix))
-              (princ (strcat "\n  EMISSAO: " emissao))
-              (princ (strcat "\n  DATA: " data))
-              
-              (princ "\n\nConfirmar importação?")
-              (initget "Sim Nao")
-              (setq confirma (getkword "\n[Sim/Nao] <Sim>: "))
-              
-              (if (or (= confirma "Sim") (= confirma nil))
-                (progn
-                  (princ "\nA aplicar dados a todos os desenhos (incluindo TEMPLATE)...")
-                  (setq count 0)
-                  
-                  (vlax-for lay (vla-get-Layouts doc)
-                    (if (/= (vla-get-ModelType lay) :vlax-true)
-                      (vlax-for blk (vla-get-Block lay)
-                        (if (IsTargetBlock blk)
-                          (progn
-                            (if (/= projNum "") (UpdateSingleTag (vla-get-Handle blk) "PROJ_NUM" projNum))
-                            (if (/= projNome "") (UpdateSingleTag (vla-get-Handle blk) "PROJ_NOME" projNome))
-                            (if (/= cliente "") (UpdateSingleTag (vla-get-Handle blk) "CLIENTE" cliente))
-                            (if (/= obra "") (UpdateSingleTag (vla-get-Handle blk) "OBRA" obra))
-                            (if (/= localizacao "") (UpdateSingleTag (vla-get-Handle blk) "LOCALIZACAO" localizacao))
-                            (if (/= especialidade "") (UpdateSingleTag (vla-get-Handle blk) "ESPECIALIDADE" especialidade))
-                            (if (/= projetou "") (UpdateSingleTag (vla-get-Handle blk) "PROJETOU" projetou))
-                            (if (/= fase "") (UpdateSingleTag (vla-get-Handle blk) "FASE" fase))
-                            (if (/= fasePfix "") (UpdateSingleTag (vla-get-Handle blk) "FASE_PFIX" fasePfix))
-                            (if (/= emissao "") (UpdateSingleTag (vla-get-Handle blk) "EMISSAO" emissao))
-                            (if (/= data "") (UpdateSingleTag (vla-get-Handle blk) "DATA" data))
-                            (UpdateTabName (vla-get-Handle blk))
-                            (setq count (1+ count)))))))
-                  
-                  (vla-Regen doc acActiveViewport)
-                  (WriteLog (strcat "IMPORT DADOS GERAIS: " (itoa count) " desenhos atualizados"))
-                  (alert (strcat "Dados importados com sucesso!\n\n" (itoa count) " desenhos atualizados.")))
-                (princ "\nImportação cancelada.")))))))
   (princ)
 )
 
@@ -2461,7 +2461,7 @@
 ;; MENSAGEM DE CARREGAMENTO
 ;; ============================================================================
 (princ "\n========================================")
-(princ "\n GESTAO DESENHOS JSJ V41.0")
+(princ "\n GESTAO DESENHOS JSJ V42.0")
 (princ "\n========================================")
 (princ "\n Comandos disponiveis:")
 (princ "\n   GESTAODESENHOSJSJ - Menu principal")

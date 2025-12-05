@@ -232,13 +232,14 @@ def import_csv_to_db(csv_path: str, conn, target_proj_num: str = None) -> int:
             print(f"Warning: Row without layout_name, skipping")
             continue
         
-        # V42: Extract project data and auto-create/update project
+        # V42+: Extract project data and auto-create/update project
         # If target_proj_num is provided, use it; otherwise use CSV data
         if target_proj_num:
             proj_num = target_proj_num
         else:
             proj_num = parsed.get('proj_num', '')
         
+        # NORMALIZED: Project fields stored ONLY in projetos table
         if proj_num:
             projeto_data = {
                 'proj_num': proj_num,
@@ -272,7 +273,9 @@ def import_csv_to_db(csv_path: str, conn, target_proj_num: str = None) -> int:
         r_data = max_rev['rev_date']
         r_desc = max_rev['rev_desc']
         
-        # Prepare desenho data (V42: includes all new fields)
+        # Prepare desenho data - NORMALIZED: no project fields duplicated
+        # Project data (cliente, obra, localizacao, especialidade, projetou)
+        # is accessed via JOIN on proj_num
         desenho_data = {
             'layout_name': layout_name,
             'dwg_name': dwg_source,  # Maintain compatibility
@@ -280,15 +283,10 @@ def import_csv_to_db(csv_path: str, conn, target_proj_num: str = None) -> int:
             'id_cad': parsed.get('id_cad', ''),
             'proj_num': proj_num,
             'proj_nome': parsed.get('proj_nome', ''),
-            'cliente': parsed.get('cliente', ''),
-            'obra': parsed.get('obra', ''),
-            'localizacao': parsed.get('localizacao', ''),
-            'especialidade': parsed.get('especialidade', ''),
             'fase': parsed.get('fase', ''),
             'fase_pfix': parsed.get('fase_pfix', ''),
             'emissao': parsed.get('emissao', ''),
             'data': parsed.get('data', ''),
-            'projetou': parsed.get('projetou', ''),
             'escalas': '',  # Not in CSV
             'pfix': parsed.get('pfix', ''),
             'des_num': parsed.get('des_num', ''),

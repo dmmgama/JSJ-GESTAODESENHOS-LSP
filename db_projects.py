@@ -287,20 +287,27 @@ def delete_projeto(conn, proj_num: str, delete_desenhos: bool = False) -> Dict[s
 
 def get_desenhos_by_projeto(conn, proj_num: str) -> List[Dict[str, Any]]:
     """
-    Get all desenhos for a specific project.
+    Get all desenhos for a specific project with project data.
     
     Args:
         conn: Database connection
         proj_num: Project number
     
     Returns:
-        List of desenho dictionaries
+        List of desenho dictionaries with project fields
     """
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT * FROM desenhos 
-        WHERE proj_num = ?
-        ORDER BY des_num
+        SELECT d.*,
+               p.cliente,
+               p.obra,
+               p.localizacao,
+               p.especialidade,
+               p.projetou
+        FROM desenhos d
+        LEFT JOIN projetos p ON d.proj_num = p.proj_num
+        WHERE d.proj_num = ?
+        ORDER BY d.des_num
     """, (proj_num,))
     
     rows = cursor.fetchall()
@@ -317,13 +324,20 @@ def get_desenhos_by_dwg_source(conn, dwg_source: str) -> List[Dict[str, Any]]:
         dwg_source: DWG source filename
     
     Returns:
-        List of desenho dictionaries
+        List of desenho dictionaries with project fields
     """
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT * FROM desenhos 
-        WHERE dwg_source = ?
-        ORDER BY des_num
+        SELECT d.*,
+               p.cliente,
+               p.obra,
+               p.localizacao,
+               p.especialidade,
+               p.projetou
+        FROM desenhos d
+        LEFT JOIN projetos p ON d.proj_num = p.proj_num
+        WHERE d.dwg_source = ?
+        ORDER BY d.des_num
     """, (dwg_source,))
     
     rows = cursor.fetchall()

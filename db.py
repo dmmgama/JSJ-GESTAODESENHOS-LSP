@@ -20,22 +20,27 @@ def get_connection():
 def criar_tabelas(conn):
     """
     Create desenhos, revisoes, and historico_comentarios tables if they don't exist.
+    
+    NOTE: Project fields (cliente, obra, localizacao, especialidade, projetou) 
+    are stored ONLY in projetos table. Access via JOIN on proj_num.
     """
     cursor = conn.cursor()
     
-    # Table: desenhos
+    # Table: desenhos (normalized - project fields via FK proj_num)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS desenhos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             layout_name TEXT NOT NULL,
             dwg_name TEXT NOT NULL,
-            cliente TEXT,
-            obra TEXT,
-            localizacao TEXT,
-            especialidade TEXT,
+            proj_num TEXT,
+            proj_nome TEXT,
+            dwg_source TEXT,
             fase TEXT,
-            projetou TEXT,
+            fase_pfix TEXT,
+            emissao TEXT,
+            data TEXT,
             escalas TEXT,
+            pfix TEXT,
             tipo_display TEXT,
             tipo_key TEXT,
             elemento TEXT,
@@ -46,7 +51,7 @@ def criar_tabelas(conn):
             r TEXT,
             r_data TEXT,
             r_desc TEXT,
-            data TEXT,
+            id_cad TEXT,
             raw_attributes TEXT,
             estado_interno TEXT DEFAULT 'projeto',
             comentario TEXT,
@@ -143,6 +148,9 @@ def upsert_desenho(conn, desenho_data: Dict[str, Any]) -> int:
     """
     Insert or update a desenho based on layout_name.
     
+    NOTE: Project fields (cliente, obra, localizacao, especialidade, projetou)
+    are NOT stored in desenhos - they come from projetos table via proj_num FK.
+    
     Args:
         conn: Database connection
         desenho_data: Dictionary with desenho fields
@@ -164,150 +172,78 @@ def upsert_desenho(conn, desenho_data: Dict[str, Any]) -> int:
         desenho_id = existing[0]
         cursor.execute("""
             UPDATE desenhos SET
-
                 dwg_name = ?,
-
-                cliente = ?,
-
-                obra = ?,
-
-                localizacao = ?,
-
-                especialidade = ?,
-
-                fase = ?,
-
-                projetou = ?,
-
-                escalas = ?,
-
-                tipo_display = ?,
-
-                tipo_key = ?,
-
-                elemento = ?,
-
-                titulo = ?,
-
-                elemento_titulo = ?,
-
-                elemento_key = ?,
-
-                des_num = ?,
-
-                r = ?,
-
-                r_data = ?,
-
-                r_desc = ?,
-
-                data = ?,
-
-                raw_attributes = ?,
-
                 proj_num = ?,
-
                 proj_nome = ?,
-
                 dwg_source = ?,
-
+                fase = ?,
                 fase_pfix = ?,
-
                 emissao = ?,
-
+                data = ?,
+                escalas = ?,
                 pfix = ?,
-
+                tipo_display = ?,
+                tipo_key = ?,
+                elemento = ?,
+                titulo = ?,
+                elemento_titulo = ?,
+                elemento_key = ?,
+                des_num = ?,
+                r = ?,
+                r_data = ?,
+                r_desc = ?,
                 id_cad = ?,
-
+                raw_attributes = ?,
                 updated_at = ?
-
             WHERE id = ?
-
         """, (
-
             desenho_data.get('dwg_name', ''),
-
-            desenho_data.get('cliente', ''),
-
-            desenho_data.get('obra', ''),
-
-            desenho_data.get('localizacao', ''),
-
-            desenho_data.get('especialidade', ''),
-
-            desenho_data.get('fase', ''),
-
-            desenho_data.get('projetou', ''),
-
-            desenho_data.get('escalas', ''),
-
-            desenho_data.get('tipo_display', ''),
-
-            desenho_data.get('tipo_key', ''),
-
-            desenho_data.get('elemento', ''),
-
-            desenho_data.get('titulo', ''),
-
-            desenho_data.get('elemento_titulo', ''),
-
-            desenho_data.get('elemento_key', ''),
-
-            desenho_data.get('des_num', ''),
-
-            desenho_data.get('r', ''),
-
-            desenho_data.get('r_data', ''),
-
-            desenho_data.get('r_desc', ''),
-
-            desenho_data.get('data', ''),
-
-            desenho_data.get('raw_attributes', ''),
-
             desenho_data.get('proj_num', ''),
-
             desenho_data.get('proj_nome', ''),
-
             desenho_data.get('dwg_source', ''),
-
+            desenho_data.get('fase', ''),
             desenho_data.get('fase_pfix', ''),
-
             desenho_data.get('emissao', ''),
-
+            desenho_data.get('data', ''),
+            desenho_data.get('escalas', ''),
             desenho_data.get('pfix', ''),
-
+            desenho_data.get('tipo_display', ''),
+            desenho_data.get('tipo_key', ''),
+            desenho_data.get('elemento', ''),
+            desenho_data.get('titulo', ''),
+            desenho_data.get('elemento_titulo', ''),
+            desenho_data.get('elemento_key', ''),
+            desenho_data.get('des_num', ''),
+            desenho_data.get('r', ''),
+            desenho_data.get('r_data', ''),
+            desenho_data.get('r_desc', ''),
             desenho_data.get('id_cad', ''),
-
+            desenho_data.get('raw_attributes', ''),
             datetime.now().isoformat(),
-
             desenho_id
-
         ))
-
     else:
         # INSERT
         cursor.execute("""
             INSERT INTO desenhos (
-                layout_name, dwg_name, cliente, obra, localizacao,
-                especialidade, fase, projetou, escalas, tipo_display,
-                tipo_key, elemento, titulo, elemento_titulo, elemento_key, des_num,
-                r, r_data, r_desc, data, raw_attributes,
-
-                proj_num, proj_nome, dwg_source, fase_pfix, emissao, pfix, id_cad,
-
+                layout_name, dwg_name, proj_num, proj_nome, dwg_source,
+                fase, fase_pfix, emissao, data, escalas, pfix,
+                tipo_display, tipo_key, elemento, titulo, elemento_titulo, elemento_key,
+                des_num, r, r_data, r_desc, id_cad, raw_attributes,
                 created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             desenho_data['layout_name'],
             desenho_data.get('dwg_name', ''),
-            desenho_data.get('cliente', ''),
-            desenho_data.get('obra', ''),
-            desenho_data.get('localizacao', ''),
-            desenho_data.get('especialidade', ''),
+            desenho_data.get('proj_num', ''),
+            desenho_data.get('proj_nome', ''),
+            desenho_data.get('dwg_source', ''),
             desenho_data.get('fase', ''),
-            desenho_data.get('projetou', ''),
+            desenho_data.get('fase_pfix', ''),
+            desenho_data.get('emissao', ''),
+            desenho_data.get('data', ''),
             desenho_data.get('escalas', ''),
+            desenho_data.get('pfix', ''),
             desenho_data.get('tipo_display', ''),
             desenho_data.get('tipo_key', ''),
             desenho_data.get('elemento', ''),
@@ -318,15 +254,8 @@ def upsert_desenho(conn, desenho_data: Dict[str, Any]) -> int:
             desenho_data.get('r', ''),
             desenho_data.get('r_data', ''),
             desenho_data.get('r_desc', ''),
-            desenho_data.get('data', ''),
-            desenho_data.get('raw_attributes', ''),
-            desenho_data.get('proj_num', ''),
-            desenho_data.get('proj_nome', ''),
-            desenho_data.get('dwg_source', ''),
-            desenho_data.get('fase_pfix', ''),
-            desenho_data.get('emissao', ''),
-            desenho_data.get('pfix', ''),
             desenho_data.get('id_cad', ''),
+            desenho_data.get('raw_attributes', ''),
             datetime.now().isoformat(),
             datetime.now().isoformat()
         ))
@@ -372,13 +301,24 @@ def replace_revisoes(conn, desenho_id: int, revisoes_list: List[Dict[str, str]])
 
 def get_all_desenhos(conn) -> List[Dict[str, Any]]:
     """
-    Get all desenhos from database.
+    Get all desenhos from database with project data joined.
+    Project fields (cliente, obra, localizacao, especialidade, projetou) come from projetos table.
     
     Returns:
-        List of desenho dictionaries
+        List of desenho dictionaries with project fields included
     """
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM desenhos ORDER BY tipo_key, elemento_key, des_num")
+    cursor.execute("""
+        SELECT d.*,
+               p.cliente,
+               p.obra,
+               p.localizacao,
+               p.especialidade,
+               p.projetou
+        FROM desenhos d
+        LEFT JOIN projetos p ON d.proj_num = p.proj_num
+        ORDER BY d.tipo_key, d.elemento_key, d.des_num
+    """)
     rows = cursor.fetchall()
     
     result = []
@@ -398,13 +338,20 @@ def get_desenhos_by_tipo_elemento(conn, tipo_key: str, elemento_key: str) -> Lis
         elemento_key: Normalized ELEMENTO key
         
     Returns:
-        List of desenho dictionaries
+        List of desenho dictionaries with project fields
     """
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT * FROM desenhos 
-        WHERE tipo_key = ? AND elemento_key = ?
-        ORDER BY des_num
+        SELECT d.*,
+               p.cliente,
+               p.obra,
+               p.localizacao,
+               p.especialidade,
+               p.projetou
+        FROM desenhos d
+        LEFT JOIN projetos p ON d.proj_num = p.proj_num
+        WHERE d.tipo_key = ? AND d.elemento_key = ?
+        ORDER BY d.des_num
     """, (tipo_key, elemento_key))
     
     rows = cursor.fetchall()
@@ -436,17 +383,27 @@ def get_revisoes_by_desenho_id(conn, desenho_id: int) -> List[Dict[str, Any]]:
 
 def get_desenho_by_layout(conn, layout_name: str) -> Dict[str, Any]:
     """
-    Get a single desenho by layout_name.
+    Get a single desenho by layout_name with project data.
     
     Args:
         conn: Database connection
         layout_name: Name of the layout
         
     Returns:
-        Desenho dictionary or None
+        Desenho dictionary with project fields or None
     """
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM desenhos WHERE layout_name = ?", (layout_name,))
+    cursor.execute("""
+        SELECT d.*,
+               p.cliente,
+               p.obra,
+               p.localizacao,
+               p.especialidade,
+               p.projetou
+        FROM desenhos d
+        LEFT JOIN projetos p ON d.proj_num = p.proj_num
+        WHERE d.layout_name = ?
+    """, (layout_name,))
     row = cursor.fetchone()
     return dict(row) if row else None
 
@@ -658,17 +615,27 @@ def get_all_layout_names(conn) -> List[str]:
 
 def get_desenho_with_revisoes(conn, desenho_id: int) -> Dict[str, Any]:
     """
-    Get a desenho with all revisões A-E expanded.
+    Get a desenho with all revisões A-E expanded and project data.
     
     Args:
         conn: Database connection
         desenho_id: ID of the desenho
         
     Returns:
-        Dict with desenho fields and rev_a, data_a, desc_a through rev_e, data_e, desc_e
+        Dict with desenho fields, project fields, and rev_a, data_a, desc_a through rev_e, data_e, desc_e
     """
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM desenhos WHERE id = ?", (desenho_id,))
+    cursor.execute("""
+        SELECT d.*,
+               p.cliente,
+               p.obra,
+               p.localizacao,
+               p.especialidade,
+               p.projetou
+        FROM desenhos d
+        LEFT JOIN projetos p ON d.proj_num = p.proj_num
+        WHERE d.id = ?
+    """, (desenho_id,))
     row = cursor.fetchone()
     
     if not row:
@@ -735,6 +702,126 @@ def get_all_desenhos_with_revisoes(conn, dwg_name: str = None) -> List[Dict[str,
         desenho = get_desenho_with_revisoes(conn, row['id'])
         if desenho:
             result.append(desenho)
+    
+    return result
+
+
+def get_desenhos_with_projeto(conn, proj_num: str = None) -> List[Dict[str, Any]]:
+    """
+    Get desenhos with project data via JOIN.
+    
+    This is the main query function for normalized schema - project fields
+    (cliente, obra, localizacao, especialidade, projetou) come from projetos table.
+    
+    Args:
+        conn: Database connection
+        proj_num: Optional project number filter
+        
+    Returns:
+        List of desenhos with project data included
+    """
+    cursor = conn.cursor()
+    
+    if proj_num:
+        cursor.execute("""
+            SELECT 
+                d.*,
+                p.cliente,
+                p.obra,
+                p.localizacao,
+                p.especialidade,
+                p.projetou
+            FROM desenhos d
+            LEFT JOIN projetos p ON d.proj_num = p.proj_num
+            WHERE d.proj_num = ?
+            ORDER BY d.tipo_key, d.elemento_key, d.des_num
+        """, (proj_num,))
+    else:
+        cursor.execute("""
+            SELECT 
+                d.*,
+                p.cliente,
+                p.obra,
+                p.localizacao,
+                p.especialidade,
+                p.projetou
+            FROM desenhos d
+            LEFT JOIN projetos p ON d.proj_num = p.proj_num
+            ORDER BY d.tipo_key, d.elemento_key, d.des_num
+        """)
+    
+    rows = cursor.fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_desenho_with_projeto(conn, desenho_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Get a single desenho with project data via JOIN.
+    
+    Args:
+        conn: Database connection
+        desenho_id: ID of the desenho
+        
+    Returns:
+        Desenho dict with project fields, or None if not found
+    """
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT 
+            d.*,
+            p.cliente,
+            p.obra,
+            p.localizacao,
+            p.especialidade,
+            p.projetou
+        FROM desenhos d
+        LEFT JOIN projetos p ON d.proj_num = p.proj_num
+        WHERE d.id = ?
+    """, (desenho_id,))
+    
+    row = cursor.fetchone()
+    return dict(row) if row else None
+
+
+def get_all_desenhos_with_projeto_and_revisoes(conn, proj_num: str = None) -> List[Dict[str, Any]]:
+    """
+    Get all desenhos with project data AND revisões A-E expanded.
+    
+    Combines JOIN with projetos and revision expansion.
+    
+    Args:
+        conn: Database connection
+        proj_num: Optional project number filter
+        
+    Returns:
+        List of desenhos with project and revision data
+    """
+    # Get desenhos with project data
+    desenhos = get_desenhos_with_projeto(conn, proj_num)
+    
+    result = []
+    for desenho in desenhos:
+        desenho_id = desenho['id']
+        
+        # Get revisoes
+        revisoes = get_revisoes_by_desenho_id(conn, desenho_id)
+        
+        # Initialize all revision fields
+        for letter in ['a', 'b', 'c', 'd', 'e']:
+            desenho[f'rev_{letter}'] = ''
+            desenho[f'data_{letter}'] = ''
+            desenho[f'desc_{letter}'] = ''
+        
+        # Map revisoes to fields
+        for rev in revisoes:
+            code = rev.get('rev_code', '').upper()
+            if code in ['A', 'B', 'C', 'D', 'E']:
+                letter = code.lower()
+                desenho[f'rev_{letter}'] = code
+                desenho[f'data_{letter}'] = rev.get('rev_date', '')
+                desenho[f'desc_{letter}'] = rev.get('rev_desc', '')
+        
+        result.append(desenho)
     
     return result
 
@@ -971,20 +1058,27 @@ def get_historico_comentarios(conn, desenho_id: int) -> List[Dict[str, Any]]:
 
 def get_desenhos_by_estado(conn, estado: str) -> List[Dict[str, Any]]:
     """
-    Get all desenhos with a specific internal state.
+    Get all desenhos with a specific internal state, including project data.
     
     Args:
         conn: Database connection
         estado: State to filter by (projeto, needs_revision, built)
         
     Returns:
-        List of desenho dictionaries
+        List of desenho dictionaries with project fields
     """
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT * FROM desenhos 
-        WHERE estado_interno = ? OR (estado_interno IS NULL AND ? = 'projeto')
-        ORDER BY tipo_key, elemento_key, des_num
+        SELECT d.*,
+               p.cliente,
+               p.obra,
+               p.localizacao,
+               p.especialidade,
+               p.projetou
+        FROM desenhos d
+        LEFT JOIN projetos p ON d.proj_num = p.proj_num
+        WHERE d.estado_interno = ? OR (d.estado_interno IS NULL AND ? = 'projeto')
+        ORDER BY d.tipo_key, d.elemento_key, d.des_num
     """, (estado, estado))
     
     rows = cursor.fetchall()
@@ -993,21 +1087,28 @@ def get_desenhos_by_estado(conn, estado: str) -> List[Dict[str, Any]]:
 
 def get_desenhos_em_atraso(conn) -> List[Dict[str, Any]]:
     """
-    Get all desenhos with needs_revision state and past deadline.
+    Get all desenhos with needs_revision state and past deadline, including project data.
     
     Returns:
-        List of desenho dictionaries that are overdue
+        List of desenho dictionaries that are overdue, with project fields
     """
     cursor = conn.cursor()
     today = datetime.now().strftime('%Y-%m-%d')
     
     cursor.execute("""
-        SELECT * FROM desenhos 
-        WHERE estado_interno = 'needs_revision' 
-        AND data_limite IS NOT NULL 
-        AND data_limite != ''
-        AND data_limite < ?
-        ORDER BY data_limite, tipo_key, elemento_key
+        SELECT d.*,
+               p.cliente,
+               p.obra,
+               p.localizacao,
+               p.especialidade,
+               p.projetou
+        FROM desenhos d
+        LEFT JOIN projetos p ON d.proj_num = p.proj_num
+        WHERE d.estado_interno = 'needs_revision' 
+        AND d.data_limite IS NOT NULL 
+        AND d.data_limite != ''
+        AND d.data_limite < ?
+        ORDER BY d.data_limite, d.tipo_key, d.elemento_key
     """, (today,))
     
     rows = cursor.fetchall()
@@ -1016,17 +1117,27 @@ def get_desenhos_em_atraso(conn) -> List[Dict[str, Any]]:
 
 def get_desenho_by_id(conn, desenho_id: int) -> Dict[str, Any]:
     """
-    Get a single desenho by ID.
+    Get a single desenho by ID with project data.
     
     Args:
         conn: Database connection
         desenho_id: ID of the desenho
         
     Returns:
-        Desenho dictionary or None
+        Desenho dictionary with project fields or None
     """
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM desenhos WHERE id = ?", (desenho_id,))
+    cursor.execute("""
+        SELECT d.*,
+               p.cliente,
+               p.obra,
+               p.localizacao,
+               p.especialidade,
+               p.projetou
+        FROM desenhos d
+        LEFT JOIN projetos p ON d.proj_num = p.proj_num
+        WHERE d.id = ?
+    """, (desenho_id,))
     row = cursor.fetchone()
     return dict(row) if row else None
 
@@ -1100,6 +1211,7 @@ def get_desenhos_at_date(conn, target_date: str) -> List[Dict[str, Any]]:
     """
     Get all desenhos with their latest revision as of a specific date.
     For each desenho, shows the revision that was current on that date.
+    Project fields come from projetos table via JOIN.
     
     Args:
         conn: Database connection
@@ -1120,12 +1232,13 @@ def get_desenhos_at_date(conn, target_date: str) -> List[Dict[str, Any]]:
     except:
         target_date_iso = target_date
     
-    # Get all desenhos
+    # Get all desenhos with project data
     cursor.execute("""
         SELECT d.id, d.layout_name, d.dwg_name, d.des_num, d.tipo_display, 
                d.elemento, d.elemento_key, d.titulo, d.elemento_titulo,
-               d.cliente, d.obra, d.data
+               p.cliente, p.obra, d.data
         FROM desenhos d
+        LEFT JOIN projetos p ON d.proj_num = p.proj_num
         ORDER BY d.layout_name
     """)
     

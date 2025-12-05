@@ -25,7 +25,7 @@ from db import (
     get_unique_revision_dates, get_desenhos_at_date
 )
 from db_projects import (
-    get_all_projetos, get_projeto_by_num, upsert_projeto,
+    get_all_projetos, get_projeto_by_num, upsert_projeto, delete_projeto,
     get_desenhos_by_projeto, get_projeto_stats, get_unique_dwg_sources,
     inicializar_multiproject
 )
@@ -314,7 +314,7 @@ if selected_page == "Projetos":
     st.title("📂 Gestão de Projetos")
     
     # Display mode selection
-    col_mode1, col_mode2, col_mode3 = st.columns([1, 1, 3])
+    col_mode1, col_mode2, col_mode3, col_mode4 = st.columns([1, 1, 1, 2])
     with col_mode1:
         if st.button("📋 Listar Projetos", use_container_width=True, type="primary" if st.session_state.get('projetos_mode', 'list') == 'list' else "secondary"):
             st.session_state['projetos_mode'] = 'list'
@@ -322,6 +322,14 @@ if selected_page == "Projetos":
     with col_mode2:
         if st.button("➕ Novo Projeto", use_container_width=True, type="primary" if st.session_state.get('projetos_mode') == 'create' else "secondary"):
             st.session_state['projetos_mode'] = 'create'
+            st.rerun()
+    with col_mode3:
+        if st.button("✏️ Editar Projeto", use_container_width=True, type="primary" if st.session_state.get('projetos_mode') == 'edit' else "secondary"):
+            st.session_state['projetos_mode'] = 'edit'
+            st.rerun()
+    with col_mode4:
+        if st.button("🗑️ Apagar Projeto", use_container_width=True, type="primary" if st.session_state.get('projetos_mode') == 'delete' else "secondary"):
+            st.session_state['projetos_mode'] = 'delete'
             st.rerun()
     
     st.markdown("---")
@@ -346,7 +354,7 @@ if selected_page == "Projetos":
                 
                 projeto_data.append({
                     'PROJ_NUM': p['proj_num'],
-                    'NOME': p['proj_nome'] or '-',
+                    'PROJ_NOME': p['proj_nome'] or '-',
                     'CLIENTE': p['cliente'] or '-',
                     'OBRA': p['obra'] or '-',
                     'DESENHOS': stats['total_desenhos'],
@@ -360,10 +368,10 @@ if selected_page == "Projetos":
             gb.configure_selection('single', use_checkbox=False)
             gb.configure_default_column(filterable=True, sorteable=True, resizable=True)
             gb.configure_pagination(paginationPageSize=20)
-            gb.configure_column("PROJ_NUM", header_name="Projeto", width=100, pinned='left')
-            gb.configure_column("NOME", header_name="Nome", width=250)
-            gb.configure_column("CLIENTE", header_name="Cliente", width=200)
-            gb.configure_column("OBRA", header_name="Obra", width=200)
+            gb.configure_column("PROJ_NUM", header_name="PROJ_NUM", width=100, pinned='left')
+            gb.configure_column("PROJ_NOME", header_name="PROJ_NOME", width=250)
+            gb.configure_column("CLIENTE", header_name="CLIENTE", width=200)
+            gb.configure_column("OBRA", header_name="OBRA", width=200)
             gb.configure_column("DESENHOS", header_name="Desenhos", width=100)
             gb.configure_column("DWGs", header_name="DWGs", width=100)
             
@@ -386,7 +394,7 @@ if selected_page == "Projetos":
                 
                 col_sel1, col_sel2 = st.columns([3, 1])
                 with col_sel1:
-                    st.success(f"**✓ Selecionado:** {proj_num} - {selected['NOME']}")
+                    st.success(f"**✓ Selecionado:** {proj_num} - {selected['PROJ_NOME']}")
                 with col_sel2:
                     if st.button(f"✅ Ativar Projeto", type="primary", use_container_width=True, key="btn_ativar_projeto"):
                         st.session_state['projeto_ativo'] = proj_num
@@ -394,6 +402,157 @@ if selected_page == "Projetos":
                         st.rerun()
             else:
                 st.warning("⚠️ Nenhum projeto selecionado. Clique numa linha da tabela acima.")
+    
+    # EDIT MODE
+    elif st.session_state.get('projetos_mode') == 'edit':
+        st.markdown("### ✏️ Editar Dados de Projeto")
+        
+        conn = get_connection()
+        projetos = get_all_projetos(conn)
+        conn.close()
+        
+        if not projetos:
+            st.warning("⚠️ Nenhum projeto disponível para editar.")
+        else:
+            # Select project to edit
+            projeto_options = [f"{p['proj_num']} - {p['proj_nome'] or 'Sem nome'}" for p in projetos]
+            selected_projeto_label = st.selectbox("Selecione o Projeto a Editar:", projeto_options)
+            
+            if selected_projeto_label:
+                selected_proj_num = selected_projeto_label.split(" - ")[0]
+                
+                # Get current project data
+                conn = get_connection()
+                projeto = get_projeto_by_num(conn, selected_proj_num)
+                stats = get_projeto_stats(conn, selected_proj_num)
+                conn.close()
+                
+                if projeto:
+                    st.info(f"📊 Este projeto tem **{stats['total_desenhos']} desenhos** associados.")
+                    
+                    with st.form("edit_projeto"):
+                        st.markdown("#### Dados do Projeto")
+                        st.caption("⚠️ PROJ_NUM é o identificador único e não pode ser alterado.")
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.text_input("PROJ_NUM", value=projeto['proj_num'], disabled=True, help="Identificador único do projeto - não editável")
+                            edit_proj_nome = st.text_input("PROJ_NOME", value=projeto['proj_nome'] or '', help="Nome do projeto")
+                            edit_cliente = st.text_input("CLIENTE", value=projeto['cliente'] or '', help="Nome do cliente")
+                            edit_obra = st.text_input("OBRA", value=projeto['obra'] or '', help="Nome da obra")
+                        
+                        with col2:
+                            edit_localizacao = st.text_input("LOCALIZAÇÃO", value=projeto['localizacao'] or '')
+                            edit_especialidade = st.text_input("ESPECIALIDADE", value=projeto['especialidade'] or '')
+                            edit_projetou = st.text_input("PROJETOU", value=projeto['projetou'] or '')
+                        
+                        col_submit1, col_submit2 = st.columns([1, 3])
+                        with col_submit1:
+                            submitted = st.form_submit_button("💾 Atualizar DB", type="primary", use_container_width=True)
+                        with col_submit2:
+                            if st.form_submit_button("❌ Cancelar", use_container_width=True):
+                                st.session_state['projetos_mode'] = 'list'
+                                st.rerun()
+                        
+                        if submitted:
+                            # Update project data
+                            projeto_data = {
+                                'proj_num': selected_proj_num,
+                                'proj_nome': edit_proj_nome,
+                                'cliente': edit_cliente,
+                                'obra': edit_obra,
+                                'localizacao': edit_localizacao,
+                                'especialidade': edit_especialidade,
+                                'projetou': edit_projetou
+                            }
+                            
+                            try:
+                                conn = get_connection()
+                                upsert_projeto(conn, projeto_data)
+                                conn.close()
+                                
+                                st.success(f"✅ Projeto {selected_proj_num} atualizado com sucesso!")
+                                st.session_state['projetos_mode'] = 'list'
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"❌ Erro ao atualizar projeto: {e}")
+    
+    # DELETE MODE
+    elif st.session_state.get('projetos_mode') == 'delete':
+        st.markdown("### 🗑️ Apagar Projeto")
+        st.warning("⚠️ **ATENÇÃO:** Apagar um projeto irá remover **TODOS os desenhos** associados a esse projeto da base de dados!")
+        
+        conn = get_connection()
+        projetos = get_all_projetos(conn)
+        conn.close()
+        
+        if not projetos:
+            st.info("ℹ️ Nenhum projeto disponível para apagar.")
+        else:
+            # Select project to delete
+            projeto_options = ["-- Selecione --"] + [f"{p['proj_num']} - {p['proj_nome'] or 'Sem nome'}" for p in projetos]
+            selected_projeto_label = st.selectbox("Selecione o Projeto a Apagar:", projeto_options, key="delete_projeto_select")
+            
+            if selected_projeto_label and selected_projeto_label != "-- Selecione --":
+                selected_proj_num = selected_projeto_label.split(" - ")[0]
+                
+                # Get project stats
+                conn = get_connection()
+                projeto = get_projeto_by_num(conn, selected_proj_num)
+                stats = get_projeto_stats(conn, selected_proj_num)
+                conn.close()
+                
+                if projeto:
+                    st.markdown("---")
+                    st.markdown("#### 📋 Dados do Projeto Selecionado:")
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.markdown(f"**PROJ_NUM:** {projeto['proj_num']}")
+                        st.markdown(f"**PROJ_NOME:** {projeto['proj_nome'] or '-'}")
+                        st.markdown(f"**CLIENTE:** {projeto['cliente'] or '-'}")
+                        st.markdown(f"**OBRA:** {projeto['obra'] or '-'}")
+                    with col2:
+                        st.markdown(f"**LOCALIZAÇÃO:** {projeto['localizacao'] or '-'}")
+                        st.markdown(f"**ESPECIALIDADE:** {projeto['especialidade'] or '-'}")
+                        st.markdown(f"**PROJETOU:** {projeto['projetou'] or '-'}")
+                    
+                    st.markdown("---")
+                    st.error(f"🚨 **Serão apagados {stats['total_desenhos']} desenhos** de {stats['dwg_sources_count']} ficheiros DWG!")
+                    
+                    # Confirmation
+                    confirm_text = st.text_input(
+                        f"Para confirmar, escreva o PROJ_NUM: **{selected_proj_num}**",
+                        help="Escreva o número do projeto para confirmar a eliminação"
+                    )
+                    
+                    col_del1, col_del2 = st.columns([1, 3])
+                    with col_del1:
+                        if st.button("🗑️ APAGAR PROJETO", type="primary", use_container_width=True, disabled=(confirm_text != selected_proj_num)):
+                            try:
+                                conn = get_connection()
+                                result = delete_projeto(conn, selected_proj_num, delete_desenhos=True)
+                                conn.close()
+                                
+                                if result['success']:
+                                    st.success(f"✅ Projeto {selected_proj_num} e {result['desenhos_deleted']} desenhos apagados com sucesso!")
+                                    # Clear active project if it was the deleted one
+                                    if st.session_state.get('projeto_ativo') == selected_proj_num:
+                                        st.session_state['projeto_ativo'] = None
+                                    st.session_state['projetos_mode'] = 'list'
+                                    st.rerun()
+                                else:
+                                    st.error(f"❌ Erro: {result.get('error', 'Erro desconhecido')}")
+                            except Exception as e:
+                                st.error(f"❌ Erro ao apagar projeto: {e}")
+                    with col_del2:
+                        if st.button("❌ Cancelar", use_container_width=True):
+                            st.session_state['projetos_mode'] = 'list'
+                            st.rerun()
+                    
+                    if confirm_text and confirm_text != selected_proj_num:
+                        st.warning("⚠️ O texto introduzido não corresponde ao PROJ_NUM.")
     
     # CREATE MODE
     elif st.session_state['projetos_mode'] == 'create':

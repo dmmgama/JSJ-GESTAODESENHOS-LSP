@@ -199,15 +199,16 @@ def load_csv_file(csv_path: str, delimiter: str = ';') -> List[Dict[str, str]]:
     return rows
 
 
-def import_csv_to_db(csv_path: str, conn, target_proj_num: str = None) -> int:
+def import_csv_to_db(csv_path: str, conn, target_proj_num: str = None, update_project_data: bool = True) -> int:
     """
     Import one CSV file into database.
-    
+
     Args:
         csv_path: Path to CSV file
         conn: Database connection
         target_proj_num: Optional project number to assign all drawings to (overrides CSV data)
-        
+        update_project_data: If True, update projetos table with CSV data. If False, only update desenhos fields.
+
     Returns:
         Number of desenhos imported
     """
@@ -240,7 +241,9 @@ def import_csv_to_db(csv_path: str, conn, target_proj_num: str = None) -> int:
             proj_num = parsed.get('proj_num', '')
         
         # NORMALIZED: Project fields stored ONLY in projetos table
-        if proj_num:
+        # Only update projetos table if update_project_data=True (e.g., from AutoLISP export)
+        # When importing from Configurações menu, update_project_data=False to preserve project data
+        if proj_num and update_project_data:
             projeto_data = {
                 'proj_num': proj_num,
                 'proj_nome': parsed.get('proj_nome', ''),
@@ -256,10 +259,13 @@ def import_csv_to_db(csv_path: str, conn, target_proj_num: str = None) -> int:
             }
             try:
                 upsert_projeto(conn, projeto_data)
+                print(f"  Updated project data for {proj_num}")
             except Exception as e:
                 print(f"Warning: Could not upsert project {proj_num}: {e}")
+
         # Remove campos globais do desenho antes de inserir
-        for k in ['fase', 'fase_pfix', 'emissao', 'data']:
+        # These fields are NEVER stored in desenhos table (only in projetos)
+        for k in ['fase', 'fase_pfix', 'emissao', 'data', 'cliente', 'obra', 'localizacao', 'especialidade', 'projetou']:
             if k in parsed:
                 parsed.pop(k)
         
@@ -344,23 +350,24 @@ def import_all_csv(csv_dir: str, conn) -> Dict[str, int]:
     }
 
 
-def import_single_csv(csv_path: str, conn, target_proj_num: str = None) -> Dict[str, int]:
+def import_single_csv(csv_path: str, conn, target_proj_num: str = None, update_project_data: bool = False) -> Dict[str, int]:
     """
     Import a single CSV file into database.
-    
+
     Args:
         csv_path: Path to CSV file
         conn: Database connection
         target_proj_num: Optional project number to assign all drawings to
-        
+        update_project_data: If True, update projetos table. Default False for Configurações menu.
+
     Returns:
         Dictionary with stats
     """
     if not Path(csv_path).exists():
         return {'files_processed': 0, 'desenhos_imported': 0, 'error': 'File not found'}
-    
-    count = import_csv_to_db(csv_path, conn, target_proj_num)
-    
+
+    count = import_csv_to_db(csv_path, conn, target_proj_num, update_project_data)
+
     return {
         'files_processed': 1,
         'desenhos_imported': count

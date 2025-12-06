@@ -138,26 +138,171 @@ def export_projeto_to_csv(projeto: dict) -> bytes:
     return ('\ufeff' + csv_str).encode('utf-8')
 
 
+def export_dwg_complete_csv(conn, proj_num: str, dwg_source: str) -> str:
+    """
+    Export complete CSV for a specific DWG_SOURCE with ALL fields from desenhos + projetos.
+
+    Uses proper JOIN to combine data from both tables based on proj_num.
+
+    Fields exported (in order):
+    PROJ_NUM, PROJ_NOME, CLIENTE, OBRA, LOCALIZACAO, ESPECIALIDADE, PROJETOU,
+    FASE, FASE_PFIX, EMISSAO, DATA, PFIX, LAYOUT, DES_NUM, TIPO, ELEMENTO, TITULO,
+    REV_A, DATA_A, DESC_A, REV_B, DATA_B, DESC_B, REV_C, DATA_C, DESC_C,
+    REV_D, DATA_D, DESC_D, REV_E, DATA_E, DESC_E, DWG_SOURCE, ID_CAD
+
+    Args:
+        conn: Database connection
+        proj_num: Project number to filter
+        dwg_source: DWG source filename to export
+
+    Returns:
+        CSV content as string with all fields
+    """
+    from db import get_revisoes_by_desenho_id
+
+    cursor = conn.cursor()
+
+    # Query: JOIN desenhos + projetos for the specific DWG_SOURCE and PROJ_NUM
+    cursor.execute("""
+        SELECT
+            d.id,
+            d.proj_num,
+            d.proj_nome,
+            d.pfix,
+            d.layout_name,
+            d.des_num,
+            d.tipo_display,
+            d.elemento,
+            d.titulo,
+            d.dwg_source,
+            d.id_cad,
+            p.cliente,
+            p.obra,
+            p.localizacao,
+            p.especialidade,
+            p.projetou,
+            p.fase,
+            p.fase_pfix,
+            p.emissao,
+            p.data
+        FROM desenhos d
+        LEFT JOIN projetos p ON d.proj_num = p.proj_num
+        WHERE d.proj_num = ? AND d.dwg_source = ?
+        ORDER BY d.des_num
+    """, (proj_num, dwg_source))
+
+    rows = cursor.fetchall()
+
+    # CSV Headers (exact order required)
+    headers = [
+        'PROJ_NUM', 'PROJ_NOME', 'CLIENTE', 'OBRA', 'LOCALIZACAO', 'ESPECIALIDADE',
+        'PROJETOU', 'FASE', 'FASE_PFIX', 'EMISSAO', 'DATA', 'PFIX', 'LAYOUT',
+        'DES_NUM', 'TIPO', 'ELEMENTO', 'TITULO', 'REV_A', 'DATA_A', 'DESC_A',
+        'REV_B', 'DATA_B', 'DESC_B', 'REV_C', 'DATA_C', 'DESC_C', 'REV_D',
+        'DATA_D', 'DESC_D', 'REV_E', 'DATA_E', 'DESC_E', 'DWG_SOURCE', 'ID_CAD'
+    ]
+
+    lines = [';'.join(headers)]
+
+    for row in rows:
+        desenho_id = row[0]
+        proj_num_val = row[1] or ''
+        proj_nome_val = row[2] or ''
+        pfix = row[3] or ''
+        layout_name = row[4] or ''
+        des_num = row[5] or ''
+        tipo_display = row[6] or ''
+        elemento = row[7] or ''
+        titulo = row[8] or ''
+        dwg_source_val = row[9] or ''
+        id_cad = row[10] or ''
+        cliente = row[11] or ''
+        obra = row[12] or ''
+        localizacao = row[13] or ''
+        especialidade = row[14] or ''
+        projetou = row[15] or ''
+        fase = row[16] or ''
+        fase_pfix = row[17] or ''
+        emissao = row[18] or ''
+        data = row[19] or ''
+
+        # Get revisions A-E
+        revisoes = get_revisoes_by_desenho_id(conn, desenho_id)
+
+        # Initialize revision fields
+        revs = {letter: {'code': '', 'date': '', 'desc': ''} for letter in ['a', 'b', 'c', 'd', 'e']}
+
+        for rev in revisoes:
+            code = rev.get('rev_code', '').upper()
+            if code in ['A', 'B', 'C', 'D', 'E']:
+                letter = code.lower()
+                revs[letter]['code'] = code
+                revs[letter]['date'] = rev.get('rev_date', '')
+                revs[letter]['desc'] = rev.get('rev_desc', '')
+
+        # Build CSV row (exact order as headers)
+        csv_row = [
+            proj_num_val,
+            proj_nome_val,
+            cliente,
+            obra,
+            localizacao,
+            especialidade,
+            projetou,
+            fase,
+            fase_pfix,
+            emissao,
+            data,
+            pfix,
+            layout_name,
+            des_num,
+            tipo_display,
+            elemento,
+            titulo,
+            revs['a']['code'],
+            revs['a']['date'],
+            revs['a']['desc'],
+            revs['b']['code'],
+            revs['b']['date'],
+            revs['b']['desc'],
+            revs['c']['code'],
+            revs['c']['date'],
+            revs['c']['desc'],
+            revs['d']['code'],
+            revs['d']['date'],
+            revs['d']['desc'],
+            revs['e']['code'],
+            revs['e']['date'],
+            revs['e']['desc'],
+            dwg_source_val,
+            id_cad
+        ]
+
+        lines.append(';'.join(str(v) for v in csv_row))
+
+    return '\n'.join(lines)
+
+
 def decode_csv_bytes(raw_bytes: bytes) -> str:
     """
     Decode CSV bytes trying multiple encodings for compatibility.
     Handles files from Excel (Windows-1252) and UTF-8 with/without BOM.
-    
+
     Args:
         raw_bytes: Raw bytes from uploaded file
-    
+
     Returns:
         Decoded string content
     """
     # Try encodings in order of likelihood
     encodings = ['utf-8-sig', 'utf-8', 'cp1252', 'latin-1', 'iso-8859-1']
-    
+
     for encoding in encodings:
         try:
             return raw_bytes.decode(encoding)
         except (UnicodeDecodeError, LookupError):
             continue
-    
+
     # Last resort: decode with errors replaced
     return raw_bytes.decode('utf-8', errors='replace')
 
@@ -1478,7 +1623,8 @@ elif selected_page == "Gestão de Desenhos":
             'data': 'Data',
             'fase_pfix': 'Fase Pfix',
             'emissao': 'Emissão',
-            # ...existing code...
+            'elemento_titulo': 'Elemento Título',
+            'id_cad': 'ID CAD'
         }
 
         # All available columns from the dataframe
@@ -1487,7 +1633,7 @@ elif selected_page == "Gestão de Desenhos":
             'r', 'r_data', 'estado_interno', 'layout_name',
             'r_desc', 'comentario', 'data_limite', 'responsavel', 'dwg_source',
             'cliente', 'obra', 'localizacao', 'especialidade', 'fase', 'projetou',
-            'escalas', 'data', 'fase_pfix', 'emissao'
+            'escalas', 'data', 'fase_pfix', 'emissao', 'elemento_titulo', 'id_cad'
         ]
         
         # Default visible columns (ordem pretendida)
@@ -1585,6 +1731,12 @@ elif selected_page == "Gestão de Desenhos":
         if 'estado_interno' in aggrid_df.columns:
             aggrid_df['estado_interno'] = aggrid_df['estado_interno'].fillna(ESTADO_DEFAULT)
             aggrid_df['estado_interno'] = aggrid_df['estado_interno'].replace('', ESTADO_DEFAULT)
+        
+        # Ensure 'fase_pfix' and 'emissao' columns are included in the filtered DataFrame
+        if 'fase_pfix' not in filtered_df.columns:
+            filtered_df['fase_pfix'] = ''
+        if 'emissao' not in filtered_df.columns:
+            filtered_df['emissao'] = ''
         
         # Build AgGrid options
         gb = GridOptionsBuilder.from_dataframe(aggrid_df)
@@ -2055,6 +2207,52 @@ elif selected_page == "Gestão de Desenhos":
                         st.warning(f"Nenhum desenho encontrado para {export_choice}.")
 
         # ========================================
+        # EXPORT CSV BY DWG (NEW - COMPLETE FORMAT)
+        # ========================================
+        st.markdown("---")
+        st.markdown("### 📦 Exportar CSV Completo por DWG")
+
+        col_dwg1, col_dwg2 = st.columns([2, 1])
+
+        with col_dwg1:
+            # Dropdown to select DWG_SOURCE
+            dwg_export_options = ["-- Selecione um DWG --"]
+            if dwg_sources_proj:
+                dwg_export_options += dwg_sources_proj
+
+            selected_dwg = st.selectbox(
+                "Escolha o DWG_SOURCE para exportar:",
+                dwg_export_options,
+                key="dwg_complete_export_select"
+            )
+
+        with col_dwg2:
+            if selected_dwg and selected_dwg != "-- Selecione um DWG --":
+                # Export button for the selected DWG
+                conn = get_connection()
+                csv_content = export_dwg_complete_csv(conn, projeto_ativo, selected_dwg)
+                conn.close()
+
+                if csv_content:
+                    today_str = datetime.now().strftime('%Y-%m-%d')
+                    dwg_clean = selected_dwg.replace('.dwg', '').replace('.DWG', '')
+                    filename = f"{projeto_ativo}-{dwg_clean}-COMPLETO-{today_str}.csv"
+
+                    st.download_button(
+                        label="📥 Exportar CSV Completo",
+                        data=csv_content.encode('utf-8-sig'),
+                        file_name=filename,
+                        mime="text/csv",
+                        use_container_width=True,
+                        key="download_dwg_complete",
+                        help="Exporta todos os campos: PROJ_NUM, PROJ_NOME, CLIENTE, OBRA, etc. + ID_CAD"
+                    )
+                else:
+                    st.warning(f"Nenhum desenho encontrado para {selected_dwg}.")
+
+        st.caption("ℹ️ Este CSV inclui TODOS os campos das tabelas 'desenhos' e 'projetos' com JOIN correto.")
+
+        # ========================================
         # DELETE DESENHOS SECTION
         # ========================================
         st.markdown("---")
@@ -2109,18 +2307,16 @@ elif selected_page == "Gestão de Desenhos":
                 conn.close()
                 
                 if pfix_options:
-                    selected_pfix = st.selectbox(
-                        "Escolha o PFIX:",
-                        ["-- Selecione --"] + pfix_options,
-                        key="delete_pfix_select"
-                    )
+                    selected_pfix = st.selectbox("Escolha o PFIX:",
+                                                  ["-- Selecione --"] + pfix_options,
+                                                  key="config_del_pfix")
                 else:
                     selected_pfix = None
                     st.caption("Nenhum PFIX encontrado no projeto ativo")
             
             with col_pfix2:
                 if selected_pfix and selected_pfix != "-- Selecione --":
-                    if st.button(f"🗑️ Eliminar PFIX: {selected_pfix}", type="secondary", key="btn_delete_pfix"):
+                    if st.button(f"🗑️ Eliminar PFIX: {selected_pfix}", type="secondary"):
                         if st.session_state.get('confirm_delete_pfix'):
                             conn = get_connection()
                             deleted = delete_desenhos_by_projeto_and_pfix(conn, projeto_ativo, selected_pfix)
@@ -2351,8 +2547,9 @@ elif selected_page == "Configurações":
                             st.rerun()
                         except Exception as e:
                             st.error(f"❌ Erro: {e}")
-            else:
-                st.caption("💡 Selecione um ficheiro CSV para importar")
+                            # Clean up on error
+                            if temp_path.exists():
+                                temp_path.unlink()
         
         st.markdown("---")
         
@@ -2418,7 +2615,7 @@ elif selected_page == "Configurações":
                             st.rerun()
                         except Exception as e:
                             st.error(f"❌ Erro: {e}")
-                            # Clean up on error too
+                            # Clean up on error
                             if temp_path.exists():
                                 temp_path.unlink()
             
@@ -2585,12 +2782,3 @@ elif selected_page == "Configurações":
                     if st.button("❌ Cancelar", key="config_no"):
                         st.session_state['confirm_delete_config'] = None
                         st.rerun()
-
-# Footer
-st.markdown("---")
-st.markdown(
-    "<div style='text-align: center; color: gray; padding: 20px;'>"
-    "JSJ Engenharia - Sistema de Gestão de Desenhos | Enhanced UI v3.0"
-    "</div>",
-    unsafe_allow_html=True
-)

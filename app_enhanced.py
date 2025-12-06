@@ -1594,17 +1594,23 @@ elif selected_page == "Gestão de Desenhos":
         gb.configure_selection('multiple', use_checkbox=True, pre_selected_rows=[])
         
         # Configure all columns with proper titles from COLUMN_TITLES
+        # Campos realmente presentes na tabela desenhos
+        desenhos_fields = {
+            'id', 'layout_name', 'proj_num', 'proj_nome', 'dwg_source',
+            'fase', 'fase_pfix', 'emissao', 'data', 'escalas', 'pfix',
+            'tipo_display', 'elemento', 'titulo', 'des_num', 'r', 'r_data', 'r_desc', 'id_cad',
+            'estado_interno', 'comentario', 'data_limite', 'responsavel'
+        }
         for col in aggrid_df.columns:
             title = COLUMN_TITLES.get(col, col)
             width = 150  # Default width
-            editable = True
             pinned = None
-            
+            # Só permite editar campos da tabela desenhos
+            editable = col in desenhos_fields and col != 'id'
             # Special configurations per column
             if col == 'id':
                 width = 60
                 pinned = 'left'
-                editable = False
             elif col == 'tipo_display':
                 title = 'Tipo de Desenho'
                 width = 150
@@ -1636,7 +1642,6 @@ elif selected_page == "Gestão de Desenhos":
             elif col == 'data_limite':
                 title = 'Data Limite'
                 width = 130
-                # Configure as date with DD-MM-YYYY format display
                 gb.configure_column(col, header_name=title, width=width, editable=editable,
                                   type=['dateColumnFilter', 'customDateTimeFormat'],
                                   custom_format_string='dd-MM-yyyy',
@@ -1650,7 +1655,6 @@ elif selected_page == "Gestão de Desenhos":
                 width = 180
             elif col == 'proj_nome':
                 width = 200
-            
             gb.configure_column(col, header_name=title, width=width, editable=editable, pinned=pinned)
         
         gridOptions = gb.build()

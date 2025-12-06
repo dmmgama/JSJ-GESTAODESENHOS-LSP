@@ -67,31 +67,25 @@ def import_json_to_db(json_obj: Dict[str, Any], conn) -> int:
         
         # Extract main fields from attributes
         tipo_display = attributes.get('TIPO', '')
-        tipo_key = normalize_tipo_display_to_key(tipo_display)
-        
-        elemento_raw = attributes.get('ELEMENTO', '')
-        elemento_key = normalize_elemento_to_key(elemento_raw)
-        
-        # Prepare desenho data
+        elemento = attributes.get('ELEMENTO', '')
+        titulo = attributes.get('TITULO', '')
+
+        # Prepare desenho data (normalized - project fields stored in projetos table only)
         desenho_data = {
             'layout_name': layout_name,
-            'dwg_name': dwg_source,  # Keep for DB compatibility
             'dwg_source': dwg_source,
-            'cliente': attributes.get('CLIENTE', ''),
-            'obra': attributes.get('OBRA', ''),
-            'localizacao': attributes.get('LOCALIZACAO', ''),
-            'especialidade': attributes.get('ESPECIALIDADE', ''),
-            'fase': attributes.get('FASE', ''),
-            'projetou': attributes.get('PROJETOU', ''),
+            'proj_num': attributes.get('PROJ_NUM', ''),
+            'proj_nome': attributes.get('PROJ_NOME', ''),
             'escalas': attributes.get('ESCALAS', ''),
+            'pfix': attributes.get('PFIX', ''),
             'tipo_display': tipo_display,
-            'tipo_key': tipo_key,
-            'elemento_titulo': attributes.get('ELEMENTO_TITULO', ''),
-            'elemento_key': elemento_key,
+            'elemento': elemento,
+            'titulo': titulo,
             'des_num': attributes.get('DES_NUM', ''),
             'r': attributes.get('R', ''),
-            'data': attributes.get('DATA', ''),
-            'raw_attributes': json.dumps(attributes, ensure_ascii=False)
+            'r_data': attributes.get('R_DATA', ''),
+            'r_desc': attributes.get('R_DESC', ''),
+            'id_cad': attributes.get('ID_CAD', '')
         }
         
         # Upsert desenho

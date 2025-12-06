@@ -265,49 +265,38 @@ def import_csv_to_db(csv_path: str, conn, target_proj_num: str = None) -> int:
         
         # Extract data
         dwg_source = parsed.get('dwg_source', 'UNKNOWN')
-        
+
         tipo_display = parsed.get('tipo_display', '')
-        tipo_key = normalize_tipo_display_to_key(tipo_display)
-        
+
         elemento = parsed.get('elemento', '')
         titulo = parsed.get('titulo', '')
-        elemento_titulo = f"{elemento} - {titulo}" if elemento and titulo else elemento or titulo
-        elemento_key = normalize_elemento_to_key(elemento)
-        
+
         # Extract revisoes
         revisoes = extract_revisoes_from_row(parsed)
         max_rev = get_max_revision(revisoes)
         r = max_rev['rev_code']
         r_data = max_rev['rev_date']
         r_desc = max_rev['rev_desc']
-        
+
         # Prepare desenho data - NORMALIZED: no project fields duplicated
         # Project data (cliente, obra, localizacao, especialidade, projetou)
         # is accessed via JOIN on proj_num
+        # NOTE: fase, fase_pfix, emissao, data are stored in projetos table only
         desenho_data = {
             'layout_name': layout_name,
-            'dwg_name': dwg_source,  # Maintain compatibility
             'dwg_source': dwg_source,
             'id_cad': parsed.get('id_cad', ''),
             'proj_num': proj_num,
             'proj_nome': parsed.get('proj_nome', ''),
-            'fase': parsed.get('fase', ''),
-            'fase_pfix': parsed.get('fase_pfix', ''),
-            'emissao': parsed.get('emissao', ''),
-            'data': parsed.get('data', ''),
             'escalas': '',  # Not in CSV
             'pfix': parsed.get('pfix', ''),
             'des_num': parsed.get('des_num', ''),
             'tipo_display': tipo_display,
-            'tipo_key': tipo_key,
             'elemento': elemento,
             'titulo': titulo,
-            'elemento_titulo': elemento_titulo,
-            'elemento_key': elemento_key,
             'r': r,
             'r_data': r_data,
-            'r_desc': r_desc,
-            'raw_attributes': str(parsed)  # Store original parsed data
+            'r_desc': r_desc
         }
         
         # Upsert desenho

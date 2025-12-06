@@ -496,30 +496,30 @@ def delete_desenhos_by_tipo(conn, tipo: str) -> int:
 
 def delete_desenhos_by_elemento(conn, elemento: str) -> int:
     """
-    Delete all desenhos with a specific elemento_key.
-    
+    Delete all desenhos with a specific elemento value.
+
     Args:
         conn: Database connection
-        elemento: Value of elemento_key to delete
-        
+        elemento: Value of elemento to delete
+
     Returns:
         Number of desenhos deleted
     """
     cursor = conn.cursor()
-    
+
     # Get IDs of desenhos to delete
-    cursor.execute("SELECT id FROM desenhos WHERE elemento_key = ?", (elemento,))
+    cursor.execute("SELECT id FROM desenhos WHERE elemento = ?", (elemento,))
     ids = [row[0] for row in cursor.fetchall()]
     count = len(ids)
-    
+
     if ids:
         # Delete revisoes for these desenhos
         placeholders = ','.join('?' * len(ids))
         cursor.execute(f"DELETE FROM revisoes WHERE desenho_id IN ({placeholders})", ids)
-        
+
         # Delete desenhos
-        cursor.execute("DELETE FROM desenhos WHERE elemento_key = ?", (elemento,))
-    
+        cursor.execute("DELETE FROM desenhos WHERE elemento = ?", (elemento,))
+
     conn.commit()
     return count
 
@@ -694,9 +694,9 @@ def get_unique_tipos(conn) -> List[str]:
 
 
 def get_unique_elementos(conn) -> List[str]:
-    """Get list of unique elemento_key values."""
+    """Get list of unique elemento values."""
     cursor = conn.cursor()
-    cursor.execute("SELECT DISTINCT elemento_key FROM desenhos WHERE elemento_key IS NOT NULL AND elemento_key != '' ORDER BY elemento_key")
+    cursor.execute("SELECT DISTINCT elemento FROM desenhos WHERE elemento IS NOT NULL AND elemento != '' ORDER BY elemento")
     return [row[0] for row in cursor.fetchall()]
 
 
@@ -828,7 +828,7 @@ def get_desenhos_with_projeto(conn, proj_num: str = None) -> List[Dict[str, Any]
             FROM desenhos d
             LEFT JOIN projetos p ON d.proj_num = p.proj_num
             WHERE d.proj_num = ?
-            ORDER BY d.tipo_key, d.elemento_key, d.des_num
+            ORDER BY d.tipo_display, d.elemento, d.des_num
         """, (proj_num,))
     else:
         cursor.execute("""
@@ -841,7 +841,7 @@ def get_desenhos_with_projeto(conn, proj_num: str = None) -> List[Dict[str, Any]
                 p.projetou
             FROM desenhos d
             LEFT JOIN projetos p ON d.proj_num = p.proj_num
-            ORDER BY d.tipo_key, d.elemento_key, d.des_num
+            ORDER BY d.tipo_display, d.elemento, d.des_num
         """)
     
     rows = cursor.fetchall()
@@ -1172,7 +1172,7 @@ def get_desenhos_by_estado(conn, estado: str) -> List[Dict[str, Any]]:
         FROM desenhos d
         LEFT JOIN projetos p ON d.proj_num = p.proj_num
         WHERE d.estado_interno = ? OR (d.estado_interno IS NULL AND ? = 'projeto')
-        ORDER BY d.tipo_key, d.elemento_key, d.des_num
+        ORDER BY d.tipo_display, d.elemento, d.des_num
     """, (estado, estado))
     
     rows = cursor.fetchall()
@@ -1202,7 +1202,7 @@ def get_desenhos_em_atraso(conn) -> List[Dict[str, Any]]:
         AND d.data_limite IS NOT NULL 
         AND d.data_limite != ''
         AND d.data_limite < ?
-        ORDER BY d.data_limite, d.tipo_key, d.elemento_key
+        ORDER BY d.data_limite, d.tipo_display, d.elemento
     """, (today,))
     
     rows = cursor.fetchall()
@@ -1328,9 +1328,9 @@ def get_desenhos_at_date(conn, target_date: str) -> List[Dict[str, Any]]:
     
     # Get all desenhos with project data
     cursor.execute("""
-        SELECT d.id, d.layout_name, d.dwg_source, d.des_num, d.tipo_display, 
-               d.elemento, d.elemento_key, d.titulo, d.elemento_titulo,
-               p.cliente, p.obra, d.data
+        SELECT d.id, d.layout_name, d.dwg_source, d.des_num, d.tipo_display,
+               d.elemento, d.titulo,
+               p.cliente, p.obra, p.data
         FROM desenhos d
         LEFT JOIN projetos p ON d.proj_num = p.proj_num
         ORDER BY d.layout_name
@@ -1346,12 +1346,10 @@ def get_desenhos_at_date(conn, target_date: str) -> List[Dict[str, Any]]:
             'des_num': row[3],
             'tipo_display': row[4],
             'elemento': row[5],
-            'elemento_key': row[6],
-            'titulo': row[7],
-            'elemento_titulo': row[8],
-            'cliente': row[9],
-            'obra': row[10],
-            'data': row[11],
+            'titulo': row[6],
+            'cliente': row[7],
+            'obra': row[8],
+            'data': row[9],
             'r': '-',
             'r_data': '-',
             'r_desc': '-'

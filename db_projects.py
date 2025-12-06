@@ -243,48 +243,34 @@ def upsert_projeto(conn, projeto_data: Dict[str, Any]) -> int:
         ))
         projeto_id = cursor.lastrowid
     
-    # Sincronizar campos de fase com desenhos do projeto
-    sync_fase_to_desenhos(conn, projeto_data['proj_num'], projeto_data)
-    
+    # NOTE: sync_fase_to_desenhos() was REMOVED after schema migration
+    # Fields fase, fase_pfix, emissao, data now live ONLY in projetos table
+    # Desenhos access these fields via JOIN on proj_num
+
     conn.commit()
     return projeto_id
 
 
 def sync_fase_to_desenhos(conn, proj_num: str, projeto_data: Dict[str, Any]) -> int:
     """
-    Sincroniza os campos de fase do projeto para todos os desenhos desse projeto.
-    Campos sincronizados: fase, fase_pfix, emissao, data
-    
+    DEPRECATED: This function is no longer needed after schema migration.
+
+    Fields fase, fase_pfix, emissao, data were REMOVED from desenhos table.
+    They now live ONLY in projetos table and are accessed via JOIN.
+
+    This function is kept for backwards compatibility but does nothing.
+
     Args:
         conn: Database connection
         proj_num: Project number
         projeto_data: Dictionary with fase fields
-    
+
     Returns:
-        Number of desenhos updated
+        0 (no desenhos updated)
     """
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-        UPDATE desenhos SET
-            fase = ?,
-            fase_pfix = ?,
-            emissao = ?,
-            data = ?,
-            updated_at = ?
-        WHERE proj_num = ?
-    """, (
-        projeto_data.get('fase', ''),
-        projeto_data.get('fase_pfix', ''),
-        projeto_data.get('emissao', ''),
-        projeto_data.get('data', ''),
-        datetime.now().isoformat(),
-        proj_num
-    ))
-    
-    count = cursor.rowcount
-    # Note: commit is done by the caller (upsert_projeto)
-    return count
+    # Function disabled - no longer needed after migration
+    # Fields are accessed via JOIN, not stored in desenhos
+    return 0
 
 
 def get_all_projetos(conn) -> List[Dict[str, Any]]:

@@ -1231,7 +1231,7 @@ elif selected_page == "Gestão de Desenhos":
             conn = get_connection()
             cursor = conn.cursor()
             for desenho_id in ids_to_update_atraso:
-                cursor.execute("UPDATE desenhos SET estado_interno = 'Em Atraso', updated_at = CURRENT_TIMESTAMP WHERE id = ?", (desenho_id,))
+                cursor.execute("UPDATE desenhos SET estado_interno = 'Em Atraso' WHERE id = ?", (desenho_id,))
             conn.commit()
             conn.close()
         
@@ -1595,10 +1595,12 @@ elif selected_page == "Gestão de Desenhos":
         
         # Configure all columns with proper titles from COLUMN_TITLES
         # Campos realmente presentes na tabela desenhos
+        # Fields that exist in desenhos table (after migration)
+        # NOTE: fase, fase_pfix, emissao, data are in projetos table, not desenhos
         desenhos_fields = {
             'id', 'layout_name', 'proj_num', 'proj_nome', 'dwg_source',
-            'fase', 'fase_pfix', 'emissao', 'data', 'escalas', 'pfix',
-            'tipo_display', 'elemento', 'titulo', 'des_num', 'r', 'r_data', 'r_desc', 'id_cad',
+            'escalas', 'pfix', 'tipo_display', 'elemento', 'titulo',
+            'des_num', 'r', 'r_data', 'r_desc', 'id_cad',
             'estado_interno', 'comentario', 'data_limite', 'responsavel'
         }
         for col in aggrid_df.columns:
@@ -1688,16 +1690,18 @@ elif selected_page == "Gestão de Desenhos":
                     
                     # Define valid columns that exist in the desenhos table
                     # These are the ONLY columns we can update
+                    # NOTE: fase, fase_pfix, emissao, data were REMOVED - they live in projetos table
                     valid_desenho_columns = {
                         'layout_name', 'proj_num', 'proj_nome', 'dwg_source',
-                        'fase', 'fase_pfix', 'emissao', 'data', 'escalas', 'pfix',
-                        'tipo_display', 'elemento', 'titulo', 'des_num', 'r', 'r_data', 'r_desc', 'id_cad',
+                        'escalas', 'pfix', 'tipo_display', 'elemento', 'titulo',
+                        'des_num', 'r', 'r_data', 'r_desc', 'id_cad',
                         'estado_interno', 'comentario', 'data_limite', 'responsavel'
                     }
-                    
-                    # Columns to exclude from update (virtual/derived columns from JOIN)
-                    excluded_columns = {'id', 'estado_interno_display', 'cliente', 'obra', 
-                                       'localizacao', 'especialidade', 'projetou'}
+
+                    # Columns to exclude from update (virtual/derived columns from JOIN with projetos)
+                    excluded_columns = {'id', 'estado_interno_display',
+                                       'cliente', 'obra', 'localizacao', 'especialidade', 'projetou',
+                                       'fase', 'fase_pfix', 'emissao', 'data'}
                     
                     # Compare with original and update database
                     changes_made = 0

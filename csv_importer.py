@@ -249,7 +249,6 @@ def import_csv_to_db(csv_path: str, conn, target_proj_num: str = None) -> int:
                 'localizacao': parsed.get('localizacao', ''),
                 'especialidade': parsed.get('especialidade', ''),
                 'projetou': parsed.get('projetou', ''),
-                # V43+: Fase fields also synced bidirectionally
                 'fase': parsed.get('fase', ''),
                 'fase_pfix': parsed.get('fase_pfix', ''),
                 'emissao': parsed.get('emissao', ''),
@@ -259,6 +258,10 @@ def import_csv_to_db(csv_path: str, conn, target_proj_num: str = None) -> int:
                 upsert_projeto(conn, projeto_data)
             except Exception as e:
                 print(f"Warning: Could not upsert project {proj_num}: {e}")
+        # Remove campos globais do desenho antes de inserir
+        for k in ['fase', 'fase_pfix', 'emissao', 'data']:
+            if k in parsed:
+                parsed.pop(k)
         
         # Extract data
         dwg_source = parsed.get('dwg_source', 'UNKNOWN')

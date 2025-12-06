@@ -1463,8 +1463,6 @@ elif selected_page == "Gestão de Desenhos":
             'r_data': 'Data Revisão',
             'estado_interno': 'Estado do Desenho',
             'layout_name': 'Layout',
-            'tipo_key': 'Tipo Key',
-            'elemento_key': 'Elemento Key',
             'r_desc': 'Descrição Revisão',
             'comentario': 'Comentário',
             'data_limite': 'Data Limite',
@@ -1478,24 +1476,18 @@ elif selected_page == "Gestão de Desenhos":
             'projetou': 'Projetou',
             'escalas': 'Escalas',
             'data': 'Data',
-            'proj_num': 'Proj Nº',
-            'proj_nome': 'Projeto',
             'fase_pfix': 'Fase Pfix',
             'emissao': 'Emissão',
-            'id_cad': 'ID CAD',
-            'created_at': 'Criado em',
-            'updated_at': 'Atualizado em',
             'elemento_titulo': 'Elemento Título'
         }
-        
+
         # All available columns from the dataframe
         all_columns = [
             'id', 'tipo_display', 'pfix', 'des_num', 'elemento', 'titulo',
-            'r', 'r_data', 'estado_interno', 'layout_name', 'tipo_key', 'elemento_key',
-            'r_desc', 'comentario', 'data_limite', 'responsavel', 'dwg_source', 
-            'cliente', 'obra', 'localizacao', 'especialidade', 'fase', 'projetou', 
-            'escalas', 'data', 'proj_num', 'proj_nome', 'fase_pfix', 'emissao', 
-            'id_cad', 'created_at', 'updated_at'
+            'r', 'r_data', 'estado_interno', 'layout_name',
+            'r_desc', 'comentario', 'data_limite', 'responsavel', 'dwg_source',
+            'cliente', 'obra', 'localizacao', 'especialidade', 'fase', 'projetou',
+            'escalas', 'data', 'fase_pfix', 'emissao'
         ]
         
         # Default visible columns (ordem pretendida)

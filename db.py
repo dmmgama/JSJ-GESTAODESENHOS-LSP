@@ -35,10 +35,7 @@ def criar_tabelas(conn):
             proj_num TEXT,
             proj_nome TEXT,
             dwg_source TEXT,
-            fase TEXT,
-            fase_pfix TEXT,
-            emissao TEXT,
-            data TEXT,
+            -- REMOVIDOS: fase, fase_pfix, emissao, data
             escalas TEXT,
             pfix TEXT,
             tipo_display TEXT,
@@ -147,29 +144,65 @@ def criar_tabelas(conn):
 def upsert_desenho(conn, desenho_data: Dict[str, Any]) -> int:
     """
     Insert or update a desenho based on id_cad (unique identifier).
-    
+
     If id_cad exists in DB, the existing record is DELETED and a new one is inserted.
     This ensures id_cad is always unique.
-    
+
     NOTE: Project fields (cliente, obra, localizacao, especialidade, projetou)
     are NOT stored in desenhos - they come from projetos table via proj_num FK.
-    
+
+    NOTE: Fields fase, fase_pfix, emissao, data were REMOVED from desenhos table.
+    They now live ONLY in projetos table.
+
     Args:
         conn: Database connection
         desenho_data: Dictionary with desenho fields
-        
+
     Returns:
         desenho_id of the inserted/updated record
     """
     cursor = conn.cursor()
-    
-    id_cad = desenho_data.get('id_cad', '')
-    
-    # If id_cad is provided, check if it exists and delete existing record
+
+    # 1. Get project data for layout_name calculation
+    proj_num = desenho_data.get('proj_num', '')
+    projeto = {}
+    if proj_num:
+        cursor.execute(
+            "SELECT fase, fase_pfix, emissao, data FROM projetos WHERE proj_num = ?",
+            (proj_num,)
+        )
+        row = cursor.fetchone()
+        if row:
+            projeto = {
+                'fase': row[0],
+                'fase_pfix': row[1],
+                'emissao': row[2],
+                'data': row[3]
+            }
+
+    # 2. Calculate layout_name with project data
+    pfix = desenho_data.get('pfix', '')
+    des_num = desenho_data.get('des_num', '')
+    rev = desenho_data.get('r', '')
+    emissao = projeto.get('emissao', '')
+    fase_pfix = projeto.get('fase_pfix', '')
+    layout_name = f"{proj_num}-EST-{pfix}{des_num}-{emissao}-{fase_pfix}-{rev}"
+
+    # 3. Sanitize desenho_data - remove fields that don't exist in desenhos table
+    sanitized_data = desenho_data.copy()
+    fields_to_remove = [
+        'fase', 'fase_pfix', 'emissao', 'data',
+        'cliente', 'obra', 'localizacao', 'especialidade', 'projetou'
+    ]
+    for field in fields_to_remove:
+        sanitized_data.pop(field, None)
+
+    # 4. If id_cad is provided, check if it exists and delete existing record
+    id_cad = sanitized_data.get('id_cad', '')
     if id_cad and id_cad.strip():
         cursor.execute("SELECT id FROM desenhos WHERE id_cad = ?", (id_cad,))
         existing = cursor.fetchone()
-        
+
         if existing:
             existing_id = existing[0]
             # Delete associated revisoes first
@@ -177,45 +210,41 @@ def upsert_desenho(conn, desenho_data: Dict[str, Any]) -> int:
             # Delete the desenho
             cursor.execute("DELETE FROM desenhos WHERE id = ?", (existing_id,))
             print(f"  Deleted existing desenho with id_cad={id_cad} (ID: {existing_id})")
-    
-    # Always INSERT new record
+
+    # 5. Always INSERT new record with calculated layout_name
     cursor.execute("""
         INSERT INTO desenhos (
             layout_name, dwg_name, proj_num, proj_nome, dwg_source,
-            fase, fase_pfix, emissao, data, escalas, pfix,
+            escalas, pfix,
             tipo_display, tipo_key, elemento, titulo, elemento_titulo, elemento_key,
             des_num, r, r_data, r_desc, id_cad, raw_attributes,
             created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
-        desenho_data['layout_name'],
-        desenho_data.get('dwg_name', ''),
-        desenho_data.get('proj_num', ''),
-        desenho_data.get('proj_nome', ''),
-        desenho_data.get('dwg_source', ''),
-        desenho_data.get('fase', ''),
-        desenho_data.get('fase_pfix', ''),
-        desenho_data.get('emissao', ''),
-        desenho_data.get('data', ''),
-        desenho_data.get('escalas', ''),
-        desenho_data.get('pfix', ''),
-        desenho_data.get('tipo_display', ''),
-        desenho_data.get('tipo_key', ''),
-        desenho_data.get('elemento', ''),
-        desenho_data.get('titulo', ''),
-        desenho_data.get('elemento_titulo', ''),
-        desenho_data.get('elemento_key', ''),
-        desenho_data.get('des_num', ''),
-        desenho_data.get('r', ''),
-        desenho_data.get('r_data', ''),
-        desenho_data.get('r_desc', ''),
-        desenho_data.get('id_cad', ''),
-        desenho_data.get('raw_attributes', ''),
+        layout_name,  # Use calculated layout_name
+        sanitized_data.get('dwg_name', ''),
+        sanitized_data.get('proj_num', ''),
+        sanitized_data.get('proj_nome', ''),
+        sanitized_data.get('dwg_source', ''),
+        sanitized_data.get('escalas', ''),
+        sanitized_data.get('pfix', ''),
+        sanitized_data.get('tipo_display', ''),
+        sanitized_data.get('tipo_key', ''),
+        sanitized_data.get('elemento', ''),
+        sanitized_data.get('titulo', ''),
+        sanitized_data.get('elemento_titulo', ''),
+        sanitized_data.get('elemento_key', ''),
+        sanitized_data.get('des_num', ''),
+        sanitized_data.get('r', ''),
+        sanitized_data.get('r_data', ''),
+        sanitized_data.get('r_desc', ''),
+        sanitized_data.get('id_cad', ''),
+        sanitized_data.get('raw_attributes', ''),
         datetime.now().isoformat(),
         datetime.now().isoformat()
     ))
     desenho_id = cursor.lastrowid
-    
+
     conn.commit()
     return desenho_id
 
@@ -269,7 +298,11 @@ def get_all_desenhos(conn) -> List[Dict[str, Any]]:
                p.obra,
                p.localizacao,
                p.especialidade,
-               p.projetou
+               p.projetou,
+               p.fase,
+               p.fase_pfix,
+               p.emissao,
+               p.data
         FROM desenhos d
         LEFT JOIN projetos p ON d.proj_num = p.proj_num
         ORDER BY d.tipo_key, d.elemento_key, d.des_num

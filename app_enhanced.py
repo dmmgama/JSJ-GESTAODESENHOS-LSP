@@ -520,7 +520,7 @@ with st.sidebar:
         options=["Projetos", "Gestão de Desenhos", "Dashboard", "Histórico", "Configurações"],
         icons=["folder", "pencil-square", "speedometer2", "clock-history", "gear"],
         menu_icon="cast",
-        default_index=1,  # Start on "Gestão de Desenhos"
+        default_index=0,  # Start on "Projetos"
         styles={
             "container": {"padding": "0!important", "background-color": "transparent"},
             "icon": {"color": "#ffffff", "font-size": "18px"}, 
@@ -601,6 +601,7 @@ if selected_page == "Projetos":
             projeto_data.append({
                 'Número do Projeto': p['proj_num'],
                 'Nome do Projeto': p['proj_nome'] or '-',
+                'Fase': p.get('fase') or '-',
                 'Cliente': p['cliente'] or '-',
                 'Tipo de Obra': p['obra'] or '-',
                 'Projetistas JSJ': p['projetou'] or '-',
@@ -616,12 +617,13 @@ if selected_page == "Projetos":
         gb.configure_default_column(filterable=True, sorteable=True, resizable=True)
         gb.configure_pagination(paginationPageSize=20)
         gb.configure_column("Número do Projeto", header_name="Número do Projeto", width=140, pinned='left')
-        gb.configure_column("Nome do Projeto", header_name="Nome do Projeto", width=250)
-        gb.configure_column("Cliente", header_name="Cliente", width=180)
-        gb.configure_column("Tipo de Obra", header_name="Tipo de Obra", width=150)
-        gb.configure_column("Projetistas JSJ", header_name="Projetistas JSJ", width=150)
-        gb.configure_column("Desenhos", header_name="Desenhos", width=90)
-        gb.configure_column("DWGs", header_name="DWGs", width=80)
+        gb.configure_column("Nome do Projeto", header_name="Nome do Projeto", width=220)
+        gb.configure_column("Fase", header_name="Fase", width=120)
+        gb.configure_column("Cliente", header_name="Cliente", width=160)
+        gb.configure_column("Tipo de Obra", header_name="Tipo de Obra", width=140)
+        gb.configure_column("Projetistas JSJ", header_name="Projetistas JSJ", width=140)
+        gb.configure_column("Desenhos", header_name="Desenhos", width=85)
+        gb.configure_column("DWGs", header_name="DWGs", width=70)
         
         grid_response = AgGrid(
             df_projetos,

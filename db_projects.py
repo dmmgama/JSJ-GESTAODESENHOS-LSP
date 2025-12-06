@@ -243,8 +243,48 @@ def upsert_projeto(conn, projeto_data: Dict[str, Any]) -> int:
         ))
         projeto_id = cursor.lastrowid
     
+    # Sincronizar campos de fase com desenhos do projeto
+    sync_fase_to_desenhos(conn, projeto_data['proj_num'], projeto_data)
+    
     conn.commit()
     return projeto_id
+
+
+def sync_fase_to_desenhos(conn, proj_num: str, projeto_data: Dict[str, Any]) -> int:
+    """
+    Sincroniza os campos de fase do projeto para todos os desenhos desse projeto.
+    Campos sincronizados: fase, fase_pfix, emissao, data
+    
+    Args:
+        conn: Database connection
+        proj_num: Project number
+        projeto_data: Dictionary with fase fields
+    
+    Returns:
+        Number of desenhos updated
+    """
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        UPDATE desenhos SET
+            fase = ?,
+            fase_pfix = ?,
+            emissao = ?,
+            data = ?,
+            updated_at = ?
+        WHERE proj_num = ?
+    """, (
+        projeto_data.get('fase', ''),
+        projeto_data.get('fase_pfix', ''),
+        projeto_data.get('emissao', ''),
+        projeto_data.get('data', ''),
+        datetime.now().isoformat(),
+        proj_num
+    ))
+    
+    count = cursor.rowcount
+    # Note: commit is done by the caller (upsert_projeto)
+    return count
 
 
 def get_all_projetos(conn) -> List[Dict[str, Any]]:

@@ -249,6 +249,11 @@ def import_csv_to_db(csv_path: str, conn, target_proj_num: str = None) -> int:
                 'localizacao': parsed.get('localizacao', ''),
                 'especialidade': parsed.get('especialidade', ''),
                 'projetou': parsed.get('projetou', ''),
+                # V43+: Fase fields also synced bidirectionally
+                'fase': parsed.get('fase', ''),
+                'fase_pfix': parsed.get('fase_pfix', ''),
+                'emissao': parsed.get('emissao', ''),
+                'data': parsed.get('data', ''),
             }
             try:
                 upsert_projeto(conn, projeto_data)

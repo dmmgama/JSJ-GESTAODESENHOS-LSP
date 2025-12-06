@@ -291,4 +291,4 @@ Projeto interno JSJ Engenharia.
 ## 📞 Contacto
 
 Desenvolvido para gestão de projetos de estruturas.
-Versão atual: **V39.5** (ELEMENTO_TITULO auto-calculado)
+Versão atual: **V39.5**

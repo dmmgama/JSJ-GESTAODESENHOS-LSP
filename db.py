@@ -31,32 +31,24 @@ def criar_tabelas(conn):
         CREATE TABLE IF NOT EXISTS desenhos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             layout_name TEXT NOT NULL,
-            dwg_name TEXT NOT NULL,
             proj_num TEXT,
             proj_nome TEXT,
             dwg_source TEXT,
-            -- REMOVIDOS: fase, fase_pfix, emissao, data
             escalas TEXT,
             pfix TEXT,
             tipo_display TEXT,
-            tipo_key TEXT,
             elemento TEXT,
             titulo TEXT,
-            elemento_titulo TEXT,
-            elemento_key TEXT,
             des_num TEXT,
             r TEXT,
             r_data TEXT,
             r_desc TEXT,
             id_cad TEXT,
-            raw_attributes TEXT,
             estado_interno TEXT DEFAULT 'projeto',
             comentario TEXT,
             data_limite TEXT,
             responsavel TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(layout_name, dwg_name)
+            UNIQUE(layout_name)
         )
     """)
     
@@ -128,10 +120,7 @@ def criar_tabelas(conn):
         CREATE INDEX IF NOT EXISTS idx_layout_name ON desenhos(layout_name)
     """)
     
-    # Index on tipo_key and elemento_key for LPP generation
-    cursor.execute("""
-        CREATE INDEX IF NOT EXISTS idx_tipo_elemento ON desenhos(tipo_key, elemento_key)
-    """)
+    # ...existing code...
     
     # Index on estado_interno for filtering
     cursor.execute("""
@@ -214,34 +203,30 @@ def upsert_desenho(conn, desenho_data: Dict[str, Any]) -> int:
     # 5. Always INSERT new record with calculated layout_name
     cursor.execute("""
         INSERT INTO desenhos (
-            layout_name, dwg_name, proj_num, proj_nome, dwg_source,
-            escalas, pfix,
-            tipo_display, tipo_key, elemento, titulo, elemento_titulo, elemento_key,
-            des_num, r, r_data, r_desc, id_cad, raw_attributes,
-            created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            layout_name, proj_num, proj_nome, dwg_source,
+            escalas, pfix, tipo_display, elemento, titulo,
+            des_num, r, r_data, r_desc, id_cad,
+            estado_interno, comentario, data_limite, responsavel
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
-        layout_name,  # Use calculated layout_name
-        sanitized_data.get('dwg_name', ''),
+        layout_name,
         sanitized_data.get('proj_num', ''),
         sanitized_data.get('proj_nome', ''),
         sanitized_data.get('dwg_source', ''),
         sanitized_data.get('escalas', ''),
         sanitized_data.get('pfix', ''),
         sanitized_data.get('tipo_display', ''),
-        sanitized_data.get('tipo_key', ''),
         sanitized_data.get('elemento', ''),
         sanitized_data.get('titulo', ''),
-        sanitized_data.get('elemento_titulo', ''),
-        sanitized_data.get('elemento_key', ''),
         sanitized_data.get('des_num', ''),
         sanitized_data.get('r', ''),
         sanitized_data.get('r_data', ''),
         sanitized_data.get('r_desc', ''),
         sanitized_data.get('id_cad', ''),
-        sanitized_data.get('raw_attributes', ''),
-        datetime.now().isoformat(),
-        datetime.now().isoformat()
+        sanitized_data.get('estado_interno', 'projeto'),
+        sanitized_data.get('comentario', ''),
+        sanitized_data.get('data_limite', ''),
+        sanitized_data.get('responsavel', '')
     ))
     desenho_id = cursor.lastrowid
 
@@ -305,7 +290,7 @@ def get_all_desenhos(conn) -> List[Dict[str, Any]]:
                p.data
         FROM desenhos d
         LEFT JOIN projetos p ON d.proj_num = p.proj_num
-        ORDER BY d.tipo_key, d.elemento_key, d.des_num
+        ORDER BY d.layout_name, d.des_num
     """)
     rows = cursor.fetchall()
     
@@ -329,21 +314,8 @@ def get_desenhos_by_tipo_elemento(conn, tipo_key: str, elemento_key: str) -> Lis
         List of desenho dictionaries with project fields
     """
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT d.*,
-               p.cliente,
-               p.obra,
-               p.localizacao,
-               p.especialidade,
-               p.projetou
-        FROM desenhos d
-        LEFT JOIN projetos p ON d.proj_num = p.proj_num
-        WHERE d.tipo_key = ? AND d.elemento_key = ?
-        ORDER BY d.des_num
-    """, (tipo_key, elemento_key))
-    
-    rows = cursor.fetchall()
-    return [dict(row) for row in rows]
+    # Função obsoleta: tipo_key e elemento_key removidos
+    return []
 
 
 def get_revisoes_by_desenho_id(conn, desenho_id: int) -> List[Dict[str, Any]]:

@@ -133,7 +133,6 @@ def create_new_desenhos_table(conn):
         CREATE TABLE IF NOT EXISTS desenhos_new (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             layout_name TEXT NOT NULL,
-            dwg_name TEXT NOT NULL,
             proj_num TEXT,
             proj_nome TEXT,
             dwg_source TEXT,
@@ -144,44 +143,36 @@ def create_new_desenhos_table(conn):
             escalas TEXT,
             pfix TEXT,
             tipo_display TEXT,
-            tipo_key TEXT,
             elemento TEXT,
             titulo TEXT,
-            elemento_titulo TEXT,
-            elemento_key TEXT,
             des_num TEXT,
             r TEXT,
             r_data TEXT,
             r_desc TEXT,
             id_cad TEXT,
-            raw_attributes TEXT,
             estado_interno TEXT DEFAULT 'projeto',
             comentario TEXT,
             data_limite TEXT,
             responsavel TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(layout_name, dwg_name)
+            UNIQUE(layout_name)
         )
     """)
     
     # Copy data from old table to new (excluding duplicate fields)
     cursor.execute("""
         INSERT INTO desenhos_new (
-            id, layout_name, dwg_name, proj_num, proj_nome, dwg_source,
+            id, layout_name, proj_num, proj_nome, dwg_source,
             fase, fase_pfix, emissao, data, escalas, pfix,
-            tipo_display, tipo_key, elemento, titulo, elemento_titulo, elemento_key,
-            des_num, r, r_data, r_desc, id_cad, raw_attributes,
-            estado_interno, comentario, data_limite, responsavel,
-            created_at, updated_at
+            tipo_display, elemento, titulo,
+            des_num, r, r_data, r_desc, id_cad,
+            estado_interno, comentario, data_limite, responsavel
         )
         SELECT 
-            id, layout_name, dwg_name, proj_num, proj_nome, dwg_source,
+            id, layout_name, proj_num, proj_nome, dwg_source,
             fase, fase_pfix, emissao, data, escalas, pfix,
-            tipo_display, tipo_key, elemento, titulo, elemento_titulo, elemento_key,
-            des_num, r, r_data, r_desc, id_cad, raw_attributes,
-            estado_interno, comentario, data_limite, responsavel,
-            created_at, updated_at
+            tipo_display, elemento, titulo,
+            des_num, r, r_data, r_desc, id_cad,
+            estado_interno, comentario, data_limite, responsavel
         FROM desenhos
     """)
     
@@ -193,7 +184,6 @@ def create_new_desenhos_table(conn):
     
     # Recreate indexes
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_layout_name ON desenhos(layout_name)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_tipo_elemento ON desenhos(tipo_key, elemento_key)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_estado_interno ON desenhos(estado_interno)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_proj_num ON desenhos(proj_num)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_dwg_source ON desenhos(dwg_source)")

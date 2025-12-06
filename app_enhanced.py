@@ -1122,8 +1122,8 @@ elif selected_page == "Dashboard":
         
         with col_chart3:
             # Bar chart - Top 10 Elementos
-            if 'elemento_key' in df.columns:
-                elemento_counts = df['elemento_key'].value_counts().head(10)
+            if 'elemento' in df.columns:
+                elemento_counts = df['elemento'].value_counts().head(10)
                 fig_elementos = px.bar(
                     x=elemento_counts.index,
                     y=elemento_counts.values,
@@ -1332,7 +1332,7 @@ elif selected_page == "Gestão de Desenhos":
             tipo_filter = st.selectbox("Tipo de Desenho", tipo_options)
         
         with col_f4:
-            elemento_options = ["Todos"] + sorted(df['elemento_key'].dropna().unique().tolist())
+            elemento_options = ["Todos"] + sorted(df['elemento'].dropna().unique().tolist())
             elemento_filter = st.selectbox("Elemento", elemento_options)
         
         with col_f5:
@@ -1363,7 +1363,7 @@ elif selected_page == "Gestão de Desenhos":
             filtered_df = filtered_df[filtered_df['tipo_display'] == tipo_filter]
         
         if elemento_filter != "Todos":
-            filtered_df = filtered_df[filtered_df['elemento_key'] == elemento_filter]
+            filtered_df = filtered_df[filtered_df['elemento'] == elemento_filter]
         
         if r_filter != "Todos":
             filtered_df = filtered_df[filtered_df['r'] == r_filter]
@@ -1478,7 +1478,7 @@ elif selected_page == "Gestão de Desenhos":
             'data': 'Data',
             'fase_pfix': 'Fase Pfix',
             'emissao': 'Emissão',
-            'elemento_titulo': 'Elemento Título'
+            # ...existing code...
         }
 
         # All available columns from the dataframe
@@ -1687,15 +1687,13 @@ elif selected_page == "Gestão de Desenhos":
                     valid_desenho_columns = {
                         'layout_name', 'proj_num', 'proj_nome', 'dwg_source',
                         'fase', 'fase_pfix', 'emissao', 'data', 'escalas', 'pfix',
-                        'tipo_display', 'tipo_key', 'elemento', 'titulo', 'elemento_titulo',
-                        'elemento_key', 'des_num', 'r', 'r_data', 'r_desc', 'id_cad',
-                        'raw_attributes', 'estado_interno', 'comentario', 'data_limite', 'responsavel'
+                        'tipo_display', 'elemento', 'titulo', 'des_num', 'r', 'r_data', 'r_desc', 'id_cad',
+                        'estado_interno', 'comentario', 'data_limite', 'responsavel'
                     }
                     
                     # Columns to exclude from update (virtual/derived columns from JOIN)
                     excluded_columns = {'id', 'estado_interno_display', 'cliente', 'obra', 
-                                       'localizacao', 'especialidade', 'projetou', 
-                                       'created_at', 'updated_at'}
+                                       'localizacao', 'especialidade', 'projetou'}
                     
                     # Compare with original and update database
                     changes_made = 0
@@ -1726,7 +1724,7 @@ elif selected_page == "Gestão de Desenhos":
                                     set_clause = ", ".join([f"{k} = ?" for k in update_fields.keys()])
                                     values = list(update_fields.values()) + [desenho_id]
                                     
-                                    query = f"UPDATE desenhos SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                                    query = f"UPDATE desenhos SET {set_clause} WHERE id = ?"
                                     cursor.execute(query, values)
                                     changes_made += 1
                         
@@ -1830,7 +1828,7 @@ elif selected_page == "Gestão de Desenhos":
                 col1, col2 = st.columns(2)
                 with col1:
                     st.metric("Prefixo", desenho.get('prefixo', '-'))
-                    st.metric("Elemento", desenho.get('elemento_key', '-'))
+                    st.metric("Elemento", desenho.get('elemento', '-'))
                     st.metric("Layout", desenho.get('layout_name', '-'))
                 with col2:
                     st.metric("Tipo", desenho.get('tipo_display', '-'))
